@@ -17,6 +17,36 @@ const dateFormatter = new Intl.DateTimeFormat('id-ID', {
   timeStyle: 'short',
 });
 
+function isWatchItem(value: unknown): value is WatchItem {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const item = value as Partial<WatchItem>;
+  return (
+    typeof item.id === 'string' &&
+    typeof item.title === 'string' &&
+    typeof item.url === 'string' &&
+    typeof item.lastWatchedAt === 'string' &&
+    item.source === 'netflix'
+  );
+}
+
+function normalizeImportedItems(items: WatchItem[]): WatchItem[] {
+  const byId = new Map<string, WatchItem>();
+
+  for (const item of items) {
+    const existingItem = byId.get(item.id);
+    if (!existingItem || Date.parse(item.lastWatchedAt) >= Date.parse(existingItem.lastWatchedAt)) {
+      byId.set(item.id, item);
+    }
+  }
+
+  return [...byId.values()].sort(
+    (left, right) => Date.parse(right.lastWatchedAt) - Date.parse(left.lastWatchedAt),
+  );
+}
+
 function formatWatchTime(value: string): string {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) {
@@ -42,6 +72,21 @@ function downloadJsonFile(items: WatchItem[]): void {
 
 async function clearHistory(): Promise<void> {
   await setWatchStorage(defaultWatchStorage);
+  await renderPopup();
+}
+
+async function importJsonFile(file: File): Promise<void> {
+  const text = await file.text();
+  const parsed = JSON.parse(text) as { items?: unknown };
+  const importedItems = Array.isArray(parsed.items) ? parsed.items.filter(isWatchItem) : [];
+
+  if (importedItems.length === 0) {
+    throw new Error('No valid watch items found in the selected JSON file.');
+  }
+
+  const currentStorage = await getWatchStorage();
+  const mergedItems = normalizeImportedItems([...currentStorage.items, ...importedItems]);
+  await setWatchStorage({ items: mergedItems });
   await renderPopup();
 }
 
@@ -113,13 +158,33 @@ async function renderPopup(): Promise<void> {
 
   const actions = document.createElement('div');
   actions.className = 'toolbar';
+  const importInput = document.createElement('input');
+  importInput.type = 'file';
+  importInput.accept = 'application/json,.json';
+  importInput.className = 'visually-hidden';
+  importInput.addEventListener('change', () => {
+    const [file] = importInput.files ?? [];
+    if (!file) {
+      return;
+    }
+
+    void importJsonFile(file).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Failed to import JSON file.';
+      window.alert(message);
+    }).finally(() => {
+      importInput.value = '';
+    });
+  });
+
   actions.append(
     createActionButton('Open Netflix', () => openUrl(NETFLIX_HOME_URL), 'primary'),
+    createActionButton('Import JSON', () => importInput.click()),
     createActionButton('Export JSON', () => downloadJsonFile(items)),
     createActionButton('Clear History', () => void clearHistory()),
   );
 
   header.append(title, actions);
+  header.append(importInput);
 
   const summary = document.createElement('p');
   summary.className = 'summary';

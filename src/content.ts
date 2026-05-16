@@ -3,6 +3,7 @@ import type { WatchItem } from './types/watch';
 const DEBUG_PREFIX = '[Anime Netflix Tracker]';
 const SAVE_DEBOUNCE_MS = 1200;
 const MIN_SAVE_INTERVAL_MS = 45000;
+const INTERACTION_SAVE_INTERVAL_MS = 1500;
 
 const TITLE_SELECTORS = [
   '[data-uia="player-header-title"]',
@@ -42,11 +43,94 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastProcessedUrl = window.location.href;
 let lastSavedSignature = '';
 let lastSavedAt = 0;
+let lastTitleFailureDebugAt = 0;
+let lastInteractionSaveAt = 0;
+let lastLoggedTitleSource = '';
+
+function logStorageAvailability(reason: string): void {
+  const chromeExists = typeof chrome !== 'undefined';
+  const storageExists = chromeExists && typeof chrome.storage !== 'undefined';
+  const localExists =
+    storageExists && typeof chrome.storage.local !== 'undefined';
+  const onChangedExists =
+    storageExists && typeof chrome.storage.onChanged !== 'undefined';
+
+  console.debug(`${DEBUG_PREFIX} storage diagnostics`, {
+    reason,
+    chromeExists,
+    storageExists,
+    localExists,
+    onChangedExists,
+    href: window.location.href,
+    readyState: document.readyState,
+  });
+}
+
+function logTitleExtractionFailure(): void {
+  const now = Date.now();
+  if (now - lastTitleFailureDebugAt < 5000) {
+    return;
+  }
+
+  lastTitleFailureDebugAt = now;
+
+  const documentTitle = cleanText(document.title);
+  const titleCandidates = getTextsFromSelectors(TITLE_SELECTORS);
+  const linkedTitleCandidates = getTextsFromSelectors(TITLE_LINK_SELECTORS);
+  const metadataCandidates = getTextsFromSelectors(METADATA_SELECTORS);
+  const fallbackCombinedCandidates = collectFallbackCombinedCandidates();
+
+  console.debug(`${DEBUG_PREFIX} title diagnostics`, {
+    href: window.location.href,
+    documentTitle,
+    titleCandidates,
+    linkedTitleCandidates,
+    metadataCandidates,
+    fallbackCombinedCandidates,
+  });
+}
+
+function logResolvedTitle(
+  source: string,
+  title: string,
+  details?: Record<string, unknown>,
+): void {
+  const signature = `${source}:${title}:${JSON.stringify(details ?? {})}`;
+  if (signature === lastLoggedTitleSource) {
+    return;
+  }
+
+  lastLoggedTitleSource = signature;
+  console.debug(`${DEBUG_PREFIX} title resolved`, {
+    source,
+    title,
+    href: window.location.href,
+    ...details,
+  });
+}
+
+function getStorageArea(): chrome.storage.StorageArea | null {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+    return null;
+  }
+
+  return chrome.storage.local;
+}
 
 function getStoredItems(): Promise<WatchItem[]> {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['items'], (result) => {
-      const items = Array.isArray(result.items) ? (result.items as WatchItem[]) : [];
+    const storageArea = getStorageArea();
+    if (!storageArea) {
+      logStorageAvailability('getStoredItems');
+      console.warn(`${DEBUG_PREFIX} chrome.storage.local is unavailable`);
+      resolve([]);
+      return;
+    }
+
+    storageArea.get(['items'], (result) => {
+      const items = Array.isArray(result.items)
+        ? (result.items as WatchItem[])
+        : [];
       resolve(items);
     });
   });
@@ -54,7 +138,15 @@ function getStoredItems(): Promise<WatchItem[]> {
 
 function setStoredItems(items: WatchItem[]): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage.local.set({ items }, () => resolve());
+    const storageArea = getStorageArea();
+    if (!storageArea) {
+      logStorageAvailability('setStoredItems');
+      console.warn(`${DEBUG_PREFIX} chrome.storage.local is unavailable`);
+      resolve();
+      return;
+    }
+
+    storageArea.set({ items }, () => resolve());
   });
 }
 
@@ -64,7 +156,9 @@ function cleanText(value: string | null | undefined): string | null {
 }
 
 function stripWrappingQuotes(value: string): string {
-  return value.replace(/^[`"'“”‘’â€œâ€â€˜â€™]+|[`"'“”‘’â€œâ€â€˜â€™]+$/g, '').trim();
+  return value
+    .replace(/^[`"'“”‘’â€œâ€â€˜â€™]+|[`"'“”‘’â€œâ€â€˜â€™]+$/g, '')
+    .trim();
 }
 
 function isIgnoredTitleText(text: string): boolean {
@@ -91,6 +185,94 @@ function getTextsFromSelectors(selectors: string[]): string[] {
   }
 
   return [...results];
+}
+
+function getAttributeTextsFromSelectors(
+  selectors: string[],
+  attributes: string[],
+): string[] {
+  const results = new Set<string>();
+
+  for (const selector of selectors) {
+    const nodes = document.querySelectorAll<HTMLElement>(selector);
+
+    for (const node of nodes) {
+      for (const attribute of attributes) {
+        const text = cleanText(node.getAttribute(attribute));
+        if (text) {
+          results.add(text);
+        }
+      }
+    }
+  }
+
+  return [...results];
+}
+
+function findFirstMatchingText(
+  selectors: string[],
+): { selector: string; text: string } | null {
+  for (const selector of selectors) {
+    const nodes = document.querySelectorAll<HTMLElement>(selector);
+
+    for (const node of nodes) {
+      const text = cleanText(node.textContent);
+      if (text) {
+        return { selector, text };
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractVideoTitleBlockData(): {
+  title: string | null;
+  episode: string | null;
+  episodeTitle: string | null;
+  rawText: string | null;
+  selector: string;
+} | null {
+  const blocks = document.querySelectorAll<HTMLElement>(
+    '[data-uia="video-title"]',
+  );
+
+  for (const block of blocks) {
+    const title = cleanText(block.querySelector('h4')?.textContent);
+    if (!title || isIgnoredTitleText(title) || isEpisodeMetadataText(title)) {
+      continue;
+    }
+
+    const spanTexts = [...block.querySelectorAll('span')]
+      .map((node) => cleanText(node.textContent))
+      .filter((value): value is string => Boolean(value));
+
+    const shorthandEpisode =
+      spanTexts.find((text) => /^E\d+$/i.test(text)) ?? null;
+    const explicitEpisode =
+      spanTexts.find((text) => /^Episode\s+\d+$/i.test(text)) ?? null;
+    const episodeNumber =
+      shorthandEpisode?.match(/\d+/)?.[0] ??
+      explicitEpisode?.match(/\d+/)?.[0] ??
+      null;
+    const episode = episodeNumber
+      ? `Episode ${episodeNumber}`
+      : explicitEpisode;
+    const episodeTitle =
+      spanTexts.find(
+        (text) => !/^E\d+$/i.test(text) && !/^Episode\s+\d+$/i.test(text),
+      ) ?? null;
+
+    return {
+      title,
+      episode,
+      episodeTitle,
+      rawText: cleanText(block.textContent),
+      selector: '[data-uia="video-title"]',
+    };
+  }
+
+  return null;
 }
 
 function findEpisodeMarkerIndex(text: string): number {
@@ -126,7 +308,10 @@ function findEpisodeMarkerIndex(text: string): number {
   return bestIndex;
 }
 
-function splitCombinedTitleCandidate(text: string): { title: string | null; metadata: string | null } {
+function splitCombinedTitleCandidate(text: string): {
+  title: string | null;
+  metadata: string | null;
+} {
   const cleaned = cleanText(stripWrappingQuotes(text));
   if (!cleaned) {
     return { title: null, metadata: null };
@@ -143,14 +328,88 @@ function splitCombinedTitleCandidate(text: string): { title: string | null; meta
   };
 }
 
+function collectFallbackCombinedCandidates(): string[] {
+  const results = new Set<string>();
+  const attributeCandidates = getAttributeTextsFromSelectors(
+    ['a', '[aria-label]', '[title]', 'img[alt]', '[data-uia]'],
+    ['aria-label', 'title', 'alt'],
+  );
+
+  for (const candidate of attributeCandidates) {
+    const normalized = normalizeMetadataText(candidate);
+    if (findEpisodeMarkerIndex(normalized) > 0) {
+      results.add(normalized);
+    }
+  }
+
+  if (!document.body) {
+    return [...results];
+  }
+
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        const tagName = parent.tagName.toLowerCase();
+        if (
+          tagName === 'script' ||
+          tagName === 'style' ||
+          tagName === 'noscript'
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        const text = cleanText(node.textContent);
+        if (!text || text.length < 4 || text.length > 200) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        if (findEpisodeMarkerIndex(normalizeMetadataText(text)) <= 0) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    },
+  );
+
+  let currentNode = walker.nextNode();
+  let count = 0;
+  while (currentNode && count < 400) {
+    const text = cleanText(currentNode.textContent);
+    if (text) {
+      results.add(normalizeMetadataText(text));
+    }
+
+    currentNode = walker.nextNode();
+    count += 1;
+  }
+
+  return [...results];
+}
+
 function isValidSeriesTitle(title: string): boolean {
   const cleaned = cleanText(stripWrappingQuotes(title));
-  if (!cleaned || isIgnoredTitleText(cleaned) || isEpisodeMetadataText(cleaned)) {
+  if (
+    !cleaned ||
+    isIgnoredTitleText(cleaned) ||
+    isEpisodeMetadataText(cleaned)
+  ) {
     return false;
   }
 
   const { title: splitTitle, metadata } = splitCombinedTitleCandidate(cleaned);
-  if (!splitTitle || isIgnoredTitleText(splitTitle) || isEpisodeMetadataText(splitTitle)) {
+  if (
+    !splitTitle ||
+    isIgnoredTitleText(splitTitle) ||
+    isEpisodeMetadataText(splitTitle)
+  ) {
     return false;
   }
 
@@ -160,14 +419,20 @@ function isValidSeriesTitle(title: string): boolean {
 function normalizeMetadataText(text: string): string {
   return text
     .replace(/(S\d+\s*:\s*E\d+)(?=[A-Z"'`“”‘’â€œâ€â€˜â€™])/g, '$1 ')
-    .replace(/(Season\s+\d+\s+Episode\s+\d+)(?=[A-Z"'`“”‘’â€œâ€â€˜â€™])/gi, '$1 ')
+    .replace(
+      /(Season\s+\d+\s+Episode\s+\d+)(?=[A-Z"'`“”‘’â€œâ€â€˜â€™])/gi,
+      '$1 ',
+    )
     .replace(/(E(?:pisode)?\s*\d+)(?=[A-Z"'`“”‘’â€œâ€â€˜â€™])/gi, '$1 ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 export function isNetflixWatchPage(): boolean {
-  return window.location.hostname.endsWith('netflix.com') && window.location.pathname.includes('/watch/');
+  return (
+    window.location.hostname.endsWith('netflix.com') &&
+    window.location.pathname.includes('/watch/')
+  );
 }
 
 export function normalizeTitle(title: string): string {
@@ -203,10 +468,17 @@ export function extractTitleFromDocumentTitle(): string | null {
   }
 
   const cleanedTitle = stripWrappingQuotes(
-    pageTitle.replace(/\s*\|\s*Netflix(?:\s+Official\s+Site)?\s*$/i, '').replace(/^Watch\s+/i, '').trim(),
+    pageTitle
+      .replace(/\s*\|\s*Netflix(?:\s+Official\s+Site)?\s*$/i, '')
+      .replace(/^Watch\s+/i, '')
+      .trim(),
   );
 
-  if (!cleanedTitle || isIgnoredTitleText(cleanedTitle) || isEpisodeMetadataText(cleanedTitle)) {
+  if (
+    !cleanedTitle ||
+    isIgnoredTitleText(cleanedTitle) ||
+    isEpisodeMetadataText(cleanedTitle)
+  ) {
     return null;
   }
 
@@ -215,13 +487,21 @@ export function extractTitleFromDocumentTitle(): string | null {
 
 function extractTitleFromMetaTags(): string | null {
   const metaCandidates = [
-    document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content,
-    document.querySelector<HTMLMetaElement>('meta[name="twitter:title"]')?.content,
+    document.querySelector<HTMLMetaElement>('meta[property="og:title"]')
+      ?.content,
+    document.querySelector<HTMLMetaElement>('meta[name="twitter:title"]')
+      ?.content,
   ];
 
   for (const candidate of metaCandidates) {
-    const cleaned = candidate ? stripWrappingQuotes(candidate.replace(/\s*\|\s*Netflix.*$/i, '').trim()) : null;
-    if (cleaned && !isIgnoredTitleText(cleaned) && !isEpisodeMetadataText(cleaned)) {
+    const cleaned = candidate
+      ? stripWrappingQuotes(candidate.replace(/\s*\|\s*Netflix.*$/i, '').trim())
+      : null;
+    if (
+      cleaned &&
+      !isIgnoredTitleText(cleaned) &&
+      !isEpisodeMetadataText(cleaned)
+    ) {
       return cleaned;
     }
   }
@@ -230,7 +510,9 @@ function extractTitleFromMetaTags(): string | null {
 }
 
 function extractTitleFromStructuredData(): string | null {
-  const scripts = document.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"]');
+  const scripts = document.querySelectorAll<HTMLScriptElement>(
+    'script[type="application/ld+json"]',
+  );
 
   for (const script of scripts) {
     const content = cleanText(script.textContent);
@@ -239,18 +521,35 @@ function extractTitleFromStructuredData(): string | null {
     }
 
     try {
-      const parsed = JSON.parse(content) as Record<string, unknown> | Array<Record<string, unknown>>;
+      const parsed = JSON.parse(content) as
+        | Record<string, unknown>
+        | Array<Record<string, unknown>>;
       const entries = Array.isArray(parsed) ? parsed : [parsed];
 
       for (const entry of entries) {
-        const partOfSeries = entry.partOfSeries as Record<string, unknown> | undefined;
-        const seriesName = cleanText(typeof partOfSeries?.name === 'string' ? partOfSeries.name : null);
-        if (seriesName && !isIgnoredTitleText(seriesName) && !isEpisodeMetadataText(seriesName)) {
+        const partOfSeries = entry.partOfSeries as
+          | Record<string, unknown>
+          | undefined;
+        const seriesName = cleanText(
+          typeof partOfSeries?.name === 'string' ? partOfSeries.name : null,
+        );
+        if (
+          seriesName &&
+          !isIgnoredTitleText(seriesName) &&
+          !isEpisodeMetadataText(seriesName)
+        ) {
           return stripWrappingQuotes(seriesName);
         }
 
-        const name = cleanText(typeof entry.name === 'string' ? entry.name : null);
-        if (name && !/^Watch\b/i.test(name) && !isIgnoredTitleText(name) && !isEpisodeMetadataText(name)) {
+        const name = cleanText(
+          typeof entry.name === 'string' ? entry.name : null,
+        );
+        if (
+          name &&
+          !/^Watch\b/i.test(name) &&
+          !isIgnoredTitleText(name) &&
+          !isEpisodeMetadataText(name)
+        ) {
           return stripWrappingQuotes(name.replace(/\s*\|\s*Netflix.*$/i, ''));
         }
       }
@@ -278,30 +577,86 @@ function pickSeriesTitle(candidates: string[]): string | null {
 function extractTitle(): string | null {
   const documentTitle = extractTitleFromDocumentTitle();
   if (documentTitle) {
+    logResolvedTitle('document.title', documentTitle);
     return documentTitle;
   }
 
   const structuredTitle = extractTitleFromStructuredData();
   if (structuredTitle) {
+    logResolvedTitle('structured-data', structuredTitle);
     return structuredTitle;
   }
 
   const metaTitle = extractTitleFromMetaTags();
   if (metaTitle) {
+    logResolvedTitle('meta-tag', metaTitle);
     return metaTitle;
   }
 
-  const linkedTitle = pickSeriesTitle(getTextsFromSelectors(TITLE_LINK_SELECTORS));
+  const videoTitleBlockData = extractVideoTitleBlockData();
+  if (videoTitleBlockData?.title) {
+    logResolvedTitle('video-title-block', videoTitleBlockData.title, {
+      selector: videoTitleBlockData.selector,
+      rawText: videoTitleBlockData.rawText,
+    });
+    return videoTitleBlockData.title;
+  }
+
+  const firstLinkedMatch = findFirstMatchingText(TITLE_LINK_SELECTORS);
+  const linkedTitle = pickSeriesTitle(
+    getTextsFromSelectors(TITLE_LINK_SELECTORS),
+  );
   if (linkedTitle) {
+    logResolvedTitle('title-link-selector', linkedTitle, {
+      selector: firstLinkedMatch?.selector ?? null,
+      rawText: firstLinkedMatch?.text ?? null,
+    });
     return linkedTitle;
   }
 
-  return pickSeriesTitle(getTextsFromSelectors(TITLE_SELECTORS));
+  const fallbackCombinedTitle = pickSeriesTitle(
+    collectFallbackCombinedCandidates(),
+  );
+  if (fallbackCombinedTitle) {
+    logResolvedTitle('fallback-combined-candidate', fallbackCombinedTitle);
+    return fallbackCombinedTitle;
+  }
+
+  const firstSelectorMatch = findFirstMatchingText(TITLE_SELECTORS);
+  const selectorTitle = pickSeriesTitle(getTextsFromSelectors(TITLE_SELECTORS));
+  if (selectorTitle) {
+    logResolvedTitle('title-selector', selectorTitle, {
+      selector: firstSelectorMatch?.selector ?? null,
+      rawText: firstSelectorMatch?.text ?? null,
+    });
+    return selectorTitle;
+  }
+
+  return null;
 }
 
 function collectMetadataTexts(): string[] {
-  const rawTexts = [...getTextsFromSelectors(METADATA_SELECTORS), ...getTextsFromSelectors(TITLE_SELECTORS)];
+  const rawTexts = [
+    ...getTextsFromSelectors(METADATA_SELECTORS),
+    ...getTextsFromSelectors(TITLE_SELECTORS),
+    ...collectFallbackCombinedCandidates(),
+  ];
   const results = new Set<string>();
+  const videoTitleBlockData = extractVideoTitleBlockData();
+
+  if (videoTitleBlockData?.episode) {
+    results.add(videoTitleBlockData.episode);
+  }
+
+  if (videoTitleBlockData?.episodeTitle) {
+    results.add(videoTitleBlockData.episodeTitle);
+  }
+
+  if (videoTitleBlockData?.episode && videoTitleBlockData?.episodeTitle) {
+    results.add(
+      `${videoTitleBlockData.episode} ${videoTitleBlockData.episodeTitle}`,
+    );
+  }
 
   for (const rawText of rawTexts) {
     if (rawText.length > 220) {
@@ -340,7 +695,9 @@ function extractSeasonAndEpisode(texts: string[]): {
   for (const rawText of texts) {
     const text = normalizeMetadataText(stripWrappingQuotes(rawText));
 
-    const combinedMatch = text.match(/\bSeason\s+(\d+)\b[\s:,-]*Episode\s+(\d+)\b(?:[\s:,-]+(.+))?/i);
+    const combinedMatch = text.match(
+      /\bSeason\s+(\d+)\b[\s:,-]*Episode\s+(\d+)\b(?:[\s:,-]+(.+))?/i,
+    );
     if (combinedMatch) {
       season = `Season ${combinedMatch[1]}`;
       episode = `Episode ${combinedMatch[2]}`;
@@ -348,7 +705,9 @@ function extractSeasonAndEpisode(texts: string[]): {
       break;
     }
 
-    const shorthandMatch = text.match(/\bS(\d+)\s*:\s*E(\d+)\b(?:[\s:,-]+(.+))?/i);
+    const shorthandMatch = text.match(
+      /\bS(\d+)\s*:\s*E(\d+)\b(?:[\s:,-]+(.+))?/i,
+    );
     if (shorthandMatch) {
       season = `Season ${shorthandMatch[1]}`;
       episode = `Episode ${shorthandMatch[2]}`;
@@ -356,7 +715,9 @@ function extractSeasonAndEpisode(texts: string[]): {
       break;
     }
 
-    const shortWordsMatch = text.match(/\bS(?:eason)?\s+(\d+)\s*[:,-]?\s*E(?:pisode)?\s+(\d+)\b(?:[\s:,-]+(.+))?/i);
+    const shortWordsMatch = text.match(
+      /\bS(?:eason)?\s+(\d+)\s*[:,-]?\s*E(?:pisode)?\s+(\d+)\b(?:[\s:,-]+(.+))?/i,
+    );
     if (shortWordsMatch) {
       season = `Season ${shortWordsMatch[1]}`;
       episode = `Episode ${shortWordsMatch[2]}`;
@@ -365,7 +726,9 @@ function extractSeasonAndEpisode(texts: string[]): {
     }
 
     if (!season) {
-      const seasonMatch = text.match(/(?:^|[\s([{])Season\s+(\d+)\b/i) ?? text.match(/(?:^|[\s([{])S(\d+)\b/i);
+      const seasonMatch =
+        text.match(/(?:^|[\s([{])Season\s+(\d+)\b/i) ??
+        text.match(/(?:^|[\s([{])S(\d+)\b/i);
       if (seasonMatch) {
         season = `Season ${seasonMatch[1]}`;
       }
@@ -373,7 +736,8 @@ function extractSeasonAndEpisode(texts: string[]): {
 
     if (!episode) {
       const episodeMatch =
-        text.match(/(?:^|[\s([{])Episode\s+(\d+)\b/i) ?? text.match(/(?:^|[\s([{])E(\d+)\b/i);
+        text.match(/(?:^|[\s([{])Episode\s+(\d+)\b/i) ??
+        text.match(/(?:^|[\s([{])E(\d+)\b/i);
       if (episodeMatch) {
         episode = `Episode ${episodeMatch[1]}`;
       }
@@ -396,14 +760,23 @@ export function extractNetflixWatchData(): WatchItem | null {
     return null;
   }
 
-  const title = cleanText(extractTitle());
+  const videoTitleBlockData = extractVideoTitleBlockData();
+  const title = cleanText(extractTitle() ?? videoTitleBlockData?.title);
   if (!title) {
-    console.debug(`${DEBUG_PREFIX} watch data skipped: no valid series title found`);
+    console.debug(
+      `${DEBUG_PREFIX} watch data skipped: no valid series title found`,
+    );
+    logTitleExtractionFailure();
     return null;
   }
 
   const metadataTexts = collectMetadataTexts();
-  const { season, episode, episodeTitle } = extractSeasonAndEpisode(metadataTexts);
+  const extractedMetadata = extractSeasonAndEpisode(metadataTexts);
+  const season = extractedMetadata.season;
+  const episode =
+    extractedMetadata.episode ?? videoTitleBlockData?.episode ?? null;
+  const episodeTitle =
+    extractedMetadata.episodeTitle ?? videoTitleBlockData?.episodeTitle ?? null;
 
   return {
     id: createWatchItemId(title),
@@ -445,7 +818,10 @@ export async function saveWatchItem(item: WatchItem): Promise<void> {
     items.push(item);
   }
 
-  items.sort((left, right) => Date.parse(right.lastWatchedAt) - Date.parse(left.lastWatchedAt));
+  items.sort(
+    (left, right) =>
+      Date.parse(right.lastWatchedAt) - Date.parse(left.lastWatchedAt),
+  );
   await setStoredItems(items);
 }
 
@@ -467,12 +843,22 @@ async function processWatchState(reason: string): Promise<void> {
   const item = extractNetflixWatchData();
   if (!item?.title) {
     console.debug(`${DEBUG_PREFIX} watch data skipped: missing title`);
+    logTitleExtractionFailure();
     return;
   }
 
-  const signature = [item.id, item.season ?? '', item.episode ?? '', item.episodeTitle ?? '', item.url].join('|');
+  const signature = [
+    item.id,
+    item.season ?? '',
+    item.episode ?? '',
+    item.episodeTitle ?? '',
+    item.url,
+  ].join('|');
   const now = Date.now();
-  if (signature === lastSavedSignature && now - lastSavedAt < MIN_SAVE_INTERVAL_MS) {
+  if (
+    signature === lastSavedSignature &&
+    now - lastSavedAt < MIN_SAVE_INTERVAL_MS
+  ) {
     return;
   }
 
@@ -513,7 +899,9 @@ function handleStorageChanges(
     return;
   }
 
-  const nextItems = Array.isArray(itemChanges.newValue) ? (itemChanges.newValue as WatchItem[]) : [];
+  const nextItems = Array.isArray(itemChanges.newValue)
+    ? (itemChanges.newValue as WatchItem[])
+    : [];
   if (nextItems.length > 0) {
     return;
   }
@@ -544,8 +932,31 @@ function observeWatchPage(): void {
   });
 }
 
+function observeUserInteractions(): void {
+  const handleInteraction = (): void => {
+    if (!isNetflixWatchPage()) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastInteractionSaveAt < INTERACTION_SAVE_INTERVAL_MS) {
+      return;
+    }
+
+    lastInteractionSaveAt = now;
+    scheduleSave('interaction');
+  };
+
+  window.addEventListener('mousemove', handleInteraction, { passive: true });
+  window.addEventListener('pointerdown', handleInteraction, { passive: true });
+  window.addEventListener('keydown', handleInteraction);
+  window.addEventListener('touchstart', handleInteraction, { passive: true });
+}
+
 function patchHistoryEvents(): void {
-  const wrapHistoryMethod = (methodName: 'pushState' | 'replaceState'): void => {
+  const wrapHistoryMethod = (
+    methodName: 'pushState' | 'replaceState',
+  ): void => {
     const originalMethod = history[methodName];
     history[methodName] = function (...args) {
       const result = originalMethod.apply(this, args);
@@ -571,9 +982,16 @@ function patchHistoryEvents(): void {
 
 function init(): void {
   console.debug(`${DEBUG_PREFIX} initialized`);
+  logStorageAvailability('init');
   patchHistoryEvents();
   observeWatchPage();
-  chrome.storage.onChanged.addListener(handleStorageChanges);
+  observeUserInteractions();
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener(handleStorageChanges);
+  } else {
+    logStorageAvailability('init-onChanged');
+    console.warn(`${DEBUG_PREFIX} chrome.storage.onChanged is unavailable`);
+  }
 
   if (isNetflixWatchPage()) {
     scheduleSave('init');
