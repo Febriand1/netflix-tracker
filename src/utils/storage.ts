@@ -12,7 +12,7 @@ import type {
   MediaStorage,
   Platform,
 } from '../types/media';
-import { createYouTubeSeriesKey } from './id';
+import { createCustomSeriesKey, createYouTubeSeriesKey } from './id';
 
 export const defaultMediaStorage: MediaStorage = {
   items: [],
@@ -403,7 +403,7 @@ function normalizeMediaItem(value: unknown): MediaItem | null {
   if (!id && platform === 'custom') {
     const customHostname = toNullableString(candidate.hostname);
     if (customHostname) {
-      id = `anime-domain-${normalizeTitle(customHostname)}-${normalizeTitle(title)}`;
+      id = createCustomSeriesKey(customHostname, title);
     }
   }
 
@@ -425,7 +425,11 @@ function normalizeMediaItem(value: unknown): MediaItem | null {
     url: normalizedUrl,
     watchUrl,
     seriesKey:
-      platform === 'youtube' ? createYouTubeSeriesKey(title) : toNullableString(candidate.seriesKey),
+      platform === 'youtube'
+        ? createYouTubeSeriesKey(title)
+        : platform === 'custom'
+          ? createCustomSeriesKey(toNullableString(candidate.hostname) ?? '', title)
+          : toNullableString(candidate.seriesKey),
     creator: toNullableString(candidate.creator),
     channel,
     season: toNullableString(candidate.season),
@@ -446,6 +450,7 @@ function normalizeMediaItem(value: unknown): MediaItem | null {
 function normalizeMediaItems(items: unknown[]): MediaItem[] {
   const byId = new Map<string, MediaItem>();
   const latestYoutubeSeries = new Map<string, MediaItem>();
+  const latestCustomSeries = new Map<string, MediaItem>();
 
   for (const rawItem of items) {
     const normalized = normalizeMediaItem(rawItem);
@@ -467,14 +472,28 @@ function normalizeMediaItems(items: unknown[]): MediaItem[] {
         latestYoutubeSeries.set(normalized.seriesKey, normalized);
       }
     }
+
+    if (normalized.platform === 'custom' && normalized.seriesKey) {
+      const existingSeries = latestCustomSeries.get(normalized.seriesKey);
+      if (
+        !existingSeries ||
+        Date.parse(normalized.lastWatchedAt) >= Date.parse(existingSeries.lastWatchedAt)
+      ) {
+        latestCustomSeries.set(normalized.seriesKey, normalized);
+      }
+    }
   }
 
   const itemsByRecency = [...byId.values()].filter((item) => {
-    if (item.platform !== 'youtube' || !item.seriesKey) {
-      return true;
+    if (item.platform === 'youtube' && item.seriesKey) {
+      return latestYoutubeSeries.get(item.seriesKey)?.id === item.id;
     }
 
-    return latestYoutubeSeries.get(item.seriesKey)?.id === item.id;
+    if (item.platform === 'custom' && item.seriesKey) {
+      return latestCustomSeries.get(item.seriesKey)?.id === item.id;
+    }
+
+    return true;
   });
 
   return itemsByRecency.sort(
@@ -532,6 +551,15 @@ export async function upsertMediaItem(item: MediaItem): Promise<void> {
       item.platform === 'youtube' &&
       item.seriesKey &&
       existingItem.platform === 'youtube' &&
+      existingItem.seriesKey === item.seriesKey
+    ) {
+      return false;
+    }
+
+    if (
+      item.platform === 'custom' &&
+      item.seriesKey &&
+      existingItem.platform === 'custom' &&
       existingItem.seriesKey === item.seriesKey
     ) {
       return false;

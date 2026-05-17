@@ -32,3 +32,7 @@ export function extractYouTubeSeriesTitle(title: string): string {
 export function createYouTubeSeriesKey(title: string): string {
   return `youtube-series-${normalizeTitle(extractYouTubeSeriesTitle(title))}`;
 }
+
+export function createCustomSeriesKey(hostname: string, title: string): string {
+  return `anime-domain-${normalizeTitle(hostname)}-${normalizeTitle(title)}`;
+}

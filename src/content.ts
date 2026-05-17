@@ -49,6 +49,10 @@ function createYouTubeSeriesKey(title: string): string {
   return `youtube-series-${normalizeTitle(cleaned || title.trim())}`;
 }
 
+function createCustomSeriesKey(hostname: string, title: string): string {
+  return `anime-domain-${normalizeTitle(hostname)}-${normalizeTitle(title)}`;
+}
+
 function isCustomInjectedPage(url: URL = new URL(window.location.href)): boolean {
   return !isNetflixWatchPage(url) && !isYouTubeWatchPage(url);
 }
@@ -194,6 +198,22 @@ async function upsertMediaItem(item: MediaItem): Promise<void> {
       const currentSeriesKey = item.seriesKey ?? createYouTubeSeriesKey(item.title);
       const existingSeriesKey =
         existingItem.seriesKey ?? createYouTubeSeriesKey(existingItem.title);
+
+      if (existingSeriesKey === currentSeriesKey) {
+        return false;
+      }
+    }
+
+    if (
+      item.platform === 'custom' &&
+      (item.seriesKey ?? createCustomSeriesKey(item.hostname ?? '', item.title)) &&
+      existingItem.platform === 'custom'
+    ) {
+      const currentSeriesKey =
+        item.seriesKey ?? createCustomSeriesKey(item.hostname ?? '', item.title);
+      const existingSeriesKey =
+        existingItem.seriesKey ??
+        createCustomSeriesKey(existingItem.hostname ?? '', existingItem.title);
 
       if (existingSeriesKey === currentSeriesKey) {
         return false;

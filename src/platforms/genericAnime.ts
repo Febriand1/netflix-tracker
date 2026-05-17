@@ -1,6 +1,20 @@
 import type { AnimeDomain, MediaItem } from '../types/media';
 import { cleanText, getMetaContent } from '../utils/dom';
 
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[_\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function createCustomSeriesKey(hostname: string, title: string): string {
+  return `anime-domain-${normalizeTitle(hostname)}-${normalizeTitle(title)}`;
+}
+
 const ANIME_DOMAINS_KEY = 'animeDomains';
 const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [
   {
@@ -12,16 +26,6 @@ const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [
     createdAt: new Date('2026-05-17T00:00:00.000Z').toISOString(),
   },
 ];
-
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
 function normalizeHostname(value: string): string {
   return value
@@ -332,16 +336,15 @@ export async function extractGenericAnimeWatchData(): Promise<MediaItem | null> 
   }
 
   const seriesTitle = extractSeriesTitle(title);
-  const normalizedHost = normalizeTitle(normalizedCurrentHostname);
-  const normalizedTitle = normalizeTitle(seriesTitle);
-  const normalizedEpisode = normalizeTitle(episode);
+  const seriesKey = createCustomSeriesKey(normalizedCurrentHostname, seriesTitle);
   const videoSourceUrl = extractVideoSourceUrl();
 
   return {
-    id: `anime-domain-${normalizedHost}-${normalizedTitle}-${normalizedEpisode}`,
+    id: seriesKey,
     platform: 'custom',
     title: seriesTitle,
     url: canonicalUrl,
+    seriesKey,
     episode,
     thumbnail: extractThumbnail(),
     publishedAt: extractPublishedAt(),
