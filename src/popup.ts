@@ -10,6 +10,7 @@ import {
   removeAnimeDomain,
   removeMediaItem,
   removeYouTubeChannel,
+  setAnimeDomains,
   upsertAnimeDomain,
   upsertYouTubeChannel,
 } from './utils/storage';
@@ -54,6 +55,7 @@ const state = {
     handle: '',
   } as YouTubeChannelDraft,
   animeDomainModalOpen: isStandaloneDomainsView,
+  animeDomainRequestPermission: true,
   animeDomainDraft: {
     id: currentUrl.searchParams.get('domainId'),
     createdAt: currentUrl.searchParams.get('createdAt') ?? undefined,
@@ -228,51 +230,6 @@ function sameAnimeDomainHostname(left: string, right: string): boolean {
   return normalizeDomainInput(left) === normalizeDomainInput(right);
 }
 
-function buildAnimeDomainManagerUrl(): string {
-  const managerUrl = new URL(chrome.runtime.getURL('popup.html'));
-  managerUrl.searchParams.set('view', 'domains');
-  managerUrl.searchParams.set('standalone', '1');
-
-  if (state.animeDomainDraft.id) {
-    managerUrl.searchParams.set('domainId', state.animeDomainDraft.id);
-  }
-
-  if (state.animeDomainDraft.createdAt) {
-    managerUrl.searchParams.set('createdAt', state.animeDomainDraft.createdAt);
-  }
-
-  if (state.animeDomainDraft.name) {
-    managerUrl.searchParams.set('name', state.animeDomainDraft.name);
-  }
-
-  if (state.animeDomainDraft.currentDomain) {
-    managerUrl.searchParams.set('currentDomain', state.animeDomainDraft.currentDomain);
-  }
-
-  if (state.animeDomainDraft.hostname) {
-    managerUrl.searchParams.set('hostname', state.animeDomainDraft.hostname);
-  }
-
-  return managerUrl.toString();
-}
-
-function openAnimeDomainManagerWindow(): void {
-  const managerUrl = buildAnimeDomainManagerUrl();
-
-  if (!chrome.windows?.create) {
-    chrome.tabs.create({ url: managerUrl });
-    return;
-  }
-
-  chrome.windows.create({
-    url: managerUrl,
-    type: 'popup',
-    focused: true,
-    width: 520,
-    height: 760,
-  });
-}
-
 function resetYouTubeChannelDraft(): void {
   state.youtubeChannelDraft = {
     id: null,
@@ -405,6 +362,48 @@ function getValidatedAnimeDomainDraft(): AnimeDomainDraft {
   };
 }
 
+function buildAnimeDomainBase(
+  domains: AnimeDomain[],
+): {
+  nextDraft: AnimeDomainDraft;
+  existingDomain: AnimeDomain | undefined;
+  baseDomain: AnimeDomain;
+} {
+  const nextDraft = getValidatedAnimeDomainDraft();
+  const existingDomain = domains.find((domain) =>
+    sameAnimeDomainHostname(domain.hostname, nextDraft.hostname),
+  );
+
+  return {
+    nextDraft,
+    existingDomain,
+    baseDomain: {
+      id: nextDraft.id ?? existingDomain?.id ?? `anime-domain-${Date.now()}`,
+      name: nextDraft.name,
+      hostname: nextDraft.hostname,
+      grantedOrigin: existingDomain?.grantedOrigin ?? null,
+      enabled: true,
+      createdAt: nextDraft.createdAt ?? existingDomain?.createdAt ?? new Date().toISOString(),
+    },
+  };
+}
+
+function mergeAnimeDomains(
+  domains: AnimeDomain[],
+  nextDomain: AnimeDomain,
+): AnimeDomain[] {
+  const filteredDomains = domains.filter((existingDomain) => {
+    if (existingDomain.id === nextDomain.id) {
+      return false;
+    }
+
+    return !sameAnimeDomainHostname(existingDomain.hostname, nextDomain.hostname);
+  });
+
+  filteredDomains.push(nextDomain);
+  return filteredDomains;
+}
+
 async function requestAnimeDomainPermission(currentDomain: string): Promise<string> {
   const normalizedCurrentDomain = normalizeCurrentDomainInput(currentDomain);
   const exactOrigin = `https://${normalizedCurrentDomain}/*`;
@@ -516,10 +515,7 @@ async function notifyBackgroundToInjectCustomDomain(): Promise<void> {
 }
 
 async function saveAnimeDomainFromDraft(domains: AnimeDomain[]): Promise<void> {
-  const nextDraft = getValidatedAnimeDomainDraft();
-  const existingDomain = domains.find((domain) =>
-    sameAnimeDomainHostname(domain.hostname, nextDraft.hostname),
-  );
+  const { nextDraft, existingDomain, baseDomain } = buildAnimeDomainBase(domains);
 
   console.debug(`${DEBUG_PREFIX} anime domain save submitted`, {
     nextDraft,
@@ -529,12 +525,8 @@ async function saveAnimeDomainFromDraft(domains: AnimeDomain[]): Promise<void> {
 
   const grantedOrigin = await requestAnimeDomainPermission(nextDraft.currentDomain);
   await upsertAnimeDomain({
-    id: nextDraft.id ?? existingDomain?.id ?? `anime-domain-${Date.now()}`,
-    name: nextDraft.name,
-    hostname: nextDraft.hostname,
+    ...baseDomain,
     grantedOrigin,
-    enabled: true,
-    createdAt: nextDraft.createdAt ?? existingDomain?.createdAt,
   });
 
   console.debug(`${DEBUG_PREFIX} anime domain saved to storage`, {
@@ -549,6 +541,70 @@ async function saveAnimeDomainFromDraft(domains: AnimeDomain[]): Promise<void> {
   resetAnimeDomainDraft();
   await renderPopup();
   window.alert(nextDraft.id || existingDomain ? 'Anime domain updated.' : 'Anime domain saved.');
+}
+
+function saveAnimeDomainFromPopup(domains: AnimeDomain[]): void {
+  let prepared:
+    | {
+        nextDraft: AnimeDomainDraft;
+        existingDomain: AnimeDomain | undefined;
+        baseDomain: AnimeDomain;
+      }
+    | undefined;
+
+  try {
+    prepared = buildAnimeDomainBase(domains);
+  } catch (error) {
+    const message = describeUnknownError(error);
+    window.alert(message);
+    return;
+  }
+
+  if (!prepared) {
+    return;
+  }
+
+  const { nextDraft, existingDomain, baseDomain } = prepared;
+  const nextDomains = mergeAnimeDomains(domains, baseDomain);
+  void setAnimeDomains(nextDomains);
+
+  console.debug(`${DEBUG_PREFIX} anime domain saved from popup before permission`, {
+    nextDraft,
+    existingDomain,
+    requestPermissionNow: state.animeDomainRequestPermission,
+  });
+
+  if (!state.animeDomainRequestPermission) {
+    closeAnimeDomainModal();
+    resetAnimeDomainDraft();
+    void renderPopup();
+    window.alert(
+      `${nextDraft.id || existingDomain ? 'Anime domain updated.' : 'Anime domain saved.'} Permission bisa diminta nanti.`,
+    );
+    return;
+  }
+
+  void requestAnimeDomainPermission(nextDraft.currentDomain)
+    .then(async (grantedOrigin) => {
+      await upsertAnimeDomain({
+        ...baseDomain,
+        grantedOrigin,
+      });
+      await injectTrackerIntoActiveTabIfNeeded(nextDraft.hostname);
+      await notifyBackgroundToInjectCustomDomain();
+      closeAnimeDomainModal();
+      resetAnimeDomainDraft();
+      await renderPopup();
+      window.alert(nextDraft.id || existingDomain ? 'Anime domain updated.' : 'Anime domain saved.');
+    })
+    .catch((error: unknown) => {
+      console.warn(
+        `${DEBUG_PREFIX} anime domain popup permission failed ${stringifyForLog({
+          draft: nextDraft,
+          errorMessage: describeUnknownError(error),
+        })}`,
+      );
+    });
 }
 
 // function createThumbnail(item: MediaItem): HTMLElement {
@@ -914,6 +970,23 @@ function createAnimeDomainModal(domains: AnimeDomain[]): HTMLElement {
     state.animeDomainDraft.hostname = hostnameInput.value;
   });
 
+  const permissionToggle = document.createElement('label');
+  permissionToggle.className = 'domain-permission-toggle';
+
+  const permissionCheckbox = document.createElement('input');
+  permissionCheckbox.type = 'checkbox';
+  permissionCheckbox.checked = state.animeDomainRequestPermission;
+  permissionCheckbox.addEventListener('change', () => {
+    state.animeDomainRequestPermission = permissionCheckbox.checked;
+  });
+
+  const permissionText = document.createElement('span');
+  permissionText.textContent = isStandaloneDomainsView
+    ? 'Minta permission domain sekarang'
+    : 'Minta permission sekarang. Popup mungkin tertutup saat dialog Chrome muncul.';
+
+  permissionToggle.append(permissionCheckbox, permissionText);
+
   const actions = document.createElement('div');
   actions.className = 'domain-form-actions';
   if (isStandaloneDomainsView) {
@@ -938,17 +1011,7 @@ function createAnimeDomainModal(domains: AnimeDomain[]): HTMLElement {
     );
   } else {
     actions.append(
-      createButton('Continue in Tab', () => {
-        try {
-          void getValidatedAnimeDomainDraft();
-        } catch (error) {
-          const message = describeUnknownError(error);
-          window.alert(message);
-          return;
-        }
-
-        openAnimeDomainManagerWindow();
-      }, 'primary'),
+      createButton('Save Domain', () => saveAnimeDomainFromPopup(domains), 'primary'),
       createButton('Cancel', () => {
         closeAnimeDomainModal();
         void renderPopup();
@@ -965,6 +1028,7 @@ function createAnimeDomainModal(domains: AnimeDomain[]): HTMLElement {
     currentDomainInput,
     hostnameLabel,
     hostnameInput,
+    permissionToggle,
     actions,
   );
   overlay.append(dialog);

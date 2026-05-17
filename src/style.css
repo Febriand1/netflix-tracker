@@ -297,6 +297,20 @@ button {
   gap: 10px;
 }
 
+.domain-permission-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.domain-permission-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
 .domain-modal-overlay {
   position: fixed;
   inset: 0;
