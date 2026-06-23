@@ -1,5 +1,6 @@
 import {
   ANIME_DOMAINS_KEY,
+  LAST_FILTER_KEY,
   STORAGE_KEY,
   STORAGE_WARN_PREFIX,
   YOUTUBE_CHANNELS_KEY,
@@ -707,4 +708,28 @@ export async function migrateStorage(): Promise<void> {
   await getMediaStorage();
   await getYouTubeChannels();
   await getAnimeDomains();
+}
+
+export function setLastFilter(filter: string): Promise<void> {
+  return new Promise((resolve) => {
+    const storageArea = getStorageArea();
+    if (!storageArea) {
+      resolve();
+      return;
+    }
+    storageArea.set({ [LAST_FILTER_KEY]: filter }, () => resolve());
+  });
+}
+
+export function getLastFilter(): Promise<string> {
+  return new Promise((resolve) => {
+    const storageArea = getStorageArea();
+    if (!storageArea) {
+      resolve('all');
+      return;
+    }
+    storageArea.get([LAST_FILTER_KEY], (result) => {
+      resolve((result[LAST_FILTER_KEY] as string) || 'all');
+    });
+  });
 }

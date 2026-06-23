@@ -19,10 +19,12 @@ import {
   setMediaItemArchived,
   upsertAnimeDomain,
   upsertYouTubeChannel,
+  getLastFilter,
+  setLastFilter,
 } from './utils/storage';
 
 type FilterValue = 'all' | Platform;
-type ViewValue = 'history' | 'archives' | 'channels' | 'domains';
+type ViewValue = 'history' | 'archives' | 'settings';
 const DEBUG_PREFIX = '[Anime Watch Tracker]';
 type YouTubeChannelDraft = {
   id: string | null;
@@ -52,8 +54,8 @@ const popupRoot = app;
 const state = {
   filter: 'all' as FilterValue,
   view:
-    initialViewParam === 'channels' || initialViewParam === 'domains'
-      ? initialViewParam
+    initialViewParam === 'settings'
+      ? 'settings'
       : ('history' as ViewValue),
   youtubeChannelModalOpen: false,
   youtubeChannelDraft: {
@@ -177,30 +179,57 @@ async function importJsonFile(file: File): Promise<void> {
 }
 
 function createButton(
-  label: string,
+  text: string,
   onClick: () => void,
   variant: 'primary' | 'secondary' = 'secondary',
 ): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = `button button-${variant}`;
-  button.textContent = label;
+  button.textContent = text;
   button.addEventListener('click', onClick);
   return button;
 }
 
-function createFilterButton(
-  label: string,
-  value: FilterValue,
+const ICONS = {
+  play: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`,
+  archive: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`,
+  unarchive: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="12" y1="12" x2="12" y2="16"></line><polyline points="10 14 12 12 14 14"></polyline></svg>`,
+  delete: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`
+};
+
+function createIconButton(
+  iconSvg: string,
+  onClick: () => void,
+  variant: 'primary' | 'secondary' | 'danger' = 'secondary',
+  text?: string,
 ): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = `filter-chip${state.filter === value ? ' is-active' : ''}`;
+  button.className = `icon-button icon-button-${variant}`;
+  button.innerHTML = text ? `${iconSvg}<span>${text}</span>` : iconSvg;
+  if (!text) {
+    button.classList.add('icon-only');
+  }
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function createFilterButton(label: string, value: FilterValue): HTMLElement {
+  const isSelected = state.filter === value;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `filter-chip ${isSelected ? 'is-active' : ''}`;
   button.textContent = label;
+
   button.addEventListener('click', () => {
-    state.filter = value;
-    void renderPopup();
+    if (state.filter !== value) {
+      state.filter = value;
+      void setLastFilter(value);
+      void renderPopup();
+    }
   });
+
   return button;
 }
 
@@ -716,6 +745,9 @@ function saveAnimeDomainFromPopup(domains: AnimeDomain[]): void {
 
 function buildMetadataText(item: MediaItem): string {
   if (item.platform === 'netflix') {
+    if (item.episode && item.episodeTitle && item.episode === item.episodeTitle) {
+      return item.episode;
+    }
     return [item.episode, item.episodeTitle].filter(Boolean).join(' - ');
   }
 
@@ -1202,23 +1234,26 @@ function createWatchCard(item: MediaItem): HTMLElement {
 
   const footer = document.createElement('div');
   footer.className = 'watch-card-footer';
+  
+  const mainAction = createIconButton(
+    ICONS.play,
+    () => openUrl(item.url),
+    'primary',
+    item.platform === 'netflix' ? 'Netflix' : item.platform === 'youtube' ? 'YouTube' : 'Open Page'
+  );
+  mainAction.style.flexGrow = '1';
+
   footer.append(
-    createButton(
-      item.platform === 'netflix'
-        ? 'Open Netflix'
-        : item.platform === 'youtube'
-          ? 'Open YouTube'
-          : 'Open Page',
-      () => openUrl(item.url),
-      'primary',
-    ),
-    createButton(
-      item.isArchived ? 'Batal Arsip' : 'Arsipkan',
+    mainAction,
+    createIconButton(
+      item.isArchived ? ICONS.unarchive : ICONS.archive,
       () => void setMediaItemArchived(item.id, !item.isArchived).then(() => renderPopup()),
+      'secondary'
     ),
-    createButton(
-      'Delete',
+    createIconButton(
+      ICONS.delete,
       () => void removeMediaItem(item.id).then(() => renderPopup()),
+      'danger'
     ),
   );
 
@@ -1340,8 +1375,7 @@ async function renderPopup(): Promise<void> {
   tabs.append(
     createViewTabButton('History', 'history'),
     createViewTabButton('Archives', 'archives'),
-    createViewTabButton('YouTube Channels', 'channels'),
-    createViewTabButton('Anime Domains', 'domains'),
+    createViewTabButton('Settings', 'settings'),
   );
 
   const summary = document.createElement('section');
@@ -1371,10 +1405,10 @@ async function renderPopup(): Promise<void> {
       }
     }
 
-    container.append(actions, importInput, filters, summary, content);
-  } else if (state.view === 'channels') {
+    container.append(filters, summary, content);
+  } else if (state.view === 'settings') {
+    container.append(actions, importInput);
     container.append(createYouTubeChannelsSection(youtubeChannels));
-  } else if (state.view === 'domains') {
     container.append(createAnimeDomainsSection(animeDomains));
   }
 
@@ -1385,4 +1419,7 @@ chrome.storage.onChanged.addListener(() => {
   void renderPopup();
 });
 
-void renderPopup();
+void getLastFilter().then((filter) => {
+  state.filter = filter as FilterValue;
+  void renderPopup();
+});

@@ -42,9 +42,9 @@ button {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-height: 100vh;
-  padding: 16px;
+  padding: 12px;
 }
 
 .popup-shell::before {
@@ -71,7 +71,7 @@ button {
 }
 
 .hero-panel {
-  padding: 18px;
+  padding: 14px;
 }
 
 .hero-panel::after,
@@ -131,7 +131,10 @@ button {
 }
 
 .filter-row {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
 }
 
 .view-tabs {
@@ -144,11 +147,23 @@ button {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.button,
-.filter-chip {
+.button {
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 11px 14px;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.filter-chip {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
   cursor: pointer;
   transition:
     transform 160ms ease,
@@ -205,17 +220,56 @@ button {
   box-shadow: 0 0 18px rgba(229, 9, 20, 0.35);
 }
 
-.button-primary {
+.button-primary,
+.icon-button-primary {
   background: linear-gradient(180deg, #ff2230 0%, var(--accent) 100%);
   color: #fff7f7;
   box-shadow: 0 12px 24px rgba(229, 9, 20, 0.25);
 }
 
 .button-secondary,
+.icon-button-secondary,
 .filter-chip {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.08);
   color: var(--text);
+}
+
+.icon-button-danger {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #ff5a64;
+}
+
+.icon-button-danger:hover {
+  background: rgba(229, 9, 20, 0.12);
+  border-color: rgba(229, 9, 20, 0.4);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: all 160ms ease;
+}
+
+.icon-button.icon-only {
+  padding: 11px;
+}
+
+.icon-button svg {
+  flex-shrink: 0;
+}
+
+.icon-button:hover {
+  transform: translateY(-2px);
 }
 
 .filter-chip.is-active {
@@ -462,9 +516,9 @@ button {
 }
 
 .watch-card-footer {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
 }
 
 .empty-state {
@@ -499,7 +553,7 @@ button {
   }
 
   .filter-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .view-tab {
