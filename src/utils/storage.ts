@@ -27,26 +27,9 @@ export const defaultMediaStorage: MediaStorage = {
   items: [],
 };
 
-const DEFAULT_YOUTUBE_CHANNELS: AllowedYouTubeChannel[] = [
-  {
-    id: 'youtube-channel-muse-indonesia',
-    name: 'Muse Indonesia',
-    handle: '@MuseIndonesia',
-    enabled: true,
-    createdAt: new Date('2026-05-17T00:00:00.000Z').toISOString(),
-  },
-];
+const DEFAULT_YOUTUBE_CHANNELS: AllowedYouTubeChannel[] = [];
 
-const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [
-  {
-    id: 'otakudesu',
-    name: 'Otakudesu',
-    hostname: 'otakudesu',
-    grantedOrigin: null,
-    enabled: true,
-    createdAt: new Date('2026-05-17T00:00:00.000Z').toISOString(),
-  },
-];
+const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [];
 
 function extractNetflixTitleId(value: string | null | undefined): string | null {
   if (!value) {

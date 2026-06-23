@@ -5,18 +5,9 @@ import {
   normalizeTitle,
   createCustomSeriesKey,
 } from '../utils/id';
+import { ANIME_DOMAINS_KEY } from '../constants/storage';
 
-const ANIME_DOMAINS_KEY = 'animeDomains';
-const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [
-  {
-    id: 'otakudesu',
-    name: 'Otakudesu',
-    hostname: 'otakudesu',
-    grantedOrigin: null,
-    enabled: true,
-    createdAt: new Date('2026-05-17T00:00:00.000Z').toISOString(),
-  },
-];
+const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [];
 
 function getStorageArea(): chrome.storage.StorageArea | null {
   if (typeof chrome === 'undefined' || !chrome.storage?.local) {
@@ -53,13 +44,13 @@ function normalizeAnimeDomain(value: unknown): AnimeDomain | null {
     hostname,
     grantedOrigin:
       typeof candidate.grantedOrigin === 'string' &&
-      candidate.grantedOrigin.trim().length > 0
+        candidate.grantedOrigin.trim().length > 0
         ? candidate.grantedOrigin.trim()
         : null,
     enabled: candidate.enabled !== false,
     createdAt:
       typeof candidate.createdAt === 'string' &&
-      candidate.createdAt.trim().length > 0
+        candidate.createdAt.trim().length > 0
         ? candidate.createdAt
         : new Date().toISOString(),
   };
@@ -209,7 +200,7 @@ function extractPublishedAt(): string | null {
 function extractCanonicalUrl(): string {
   return normalizeUrl(
     document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ??
-      window.location.href,
+    window.location.href,
   );
 }
 

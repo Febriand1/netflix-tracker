@@ -195,7 +195,8 @@ const ICONS = {
   play: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`,
   archive: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>`,
   unarchive: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="12" y1="12" x2="12" y2="16"></line><polyline points="10 14 12 12 14 14"></polyline></svg>`,
-  delete: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`
+  delete: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`,
+  edit: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`
 };
 
 function createIconButton(
@@ -248,17 +249,26 @@ function createViewTabButton(
   return button;
 }
 
-function createBadge(platform: Platform): HTMLElement {
+function createBadge(platform: Platform, text?: string): HTMLElement {
   const badge = document.createElement('span');
   badge.className = `platform-badge platform-${platform}`;
-  badge.textContent =
-    platform === 'netflix'
-      ? 'Netflix'
-      : platform === 'youtube'
-        ? 'YouTube'
-        : 'Custom';
+  badge.textContent = platform === 'netflix'
+    ? 'Netflix'
+    : platform === 'youtube'
+      ? `YT: ${text}`
+      : text || 'Custom';
   return badge;
 }
+
+// function createBadge(platform: Platform, text?: string): HTMLElement {
+//   const badge = document.createElement('span');
+//   badge.className = `platform-badge platform-${platform}`;
+//   badge.textContent =
+//     platform === 'netflix' ? 'Netflix'
+//       : platform === 'youtube' ? 'YT'
+//         : 'Custom';
+//   return badge;
+// }
 
 function createUploadDayBadge(day: string): HTMLElement {
   const badge = document.createElement('span');
@@ -653,10 +663,10 @@ async function saveAnimeDomainFromDraft(domains: AnimeDomain[]): Promise<void> {
 function saveAnimeDomainFromPopup(domains: AnimeDomain[]): void {
   let prepared:
     | {
-        nextDraft: AnimeDomainDraft;
-        existingDomain: AnimeDomain | undefined;
-        baseDomain: AnimeDomain;
-      }
+      nextDraft: AnimeDomainDraft;
+      existingDomain: AnimeDomain | undefined;
+      baseDomain: AnimeDomain;
+    }
     | undefined;
 
   try {
@@ -743,19 +753,25 @@ function saveAnimeDomainFromPopup(domains: AnimeDomain[]): void {
 //   return frame;
 // }
 
+// function buildMetadataText(item: MediaItem): string {
+//   if (item.platform === 'netflix') {
+//     if (item.episode && item.episodeTitle && item.episode === item.episodeTitle) {
+//       return item.episode;
+//     }
+//     return [item.episode, item.episodeTitle].filter(Boolean).join(' - ');
+//   }
+
+//   if (item.platform === 'custom') {
+//     return [item.episode, item.siteName].filter(Boolean).join(' - ');
+//   }
+
+//   return [item.episode, item.channel].filter(Boolean).join(' - ');
+// }
 function buildMetadataText(item: MediaItem): string {
-  if (item.platform === 'netflix') {
-    if (item.episode && item.episodeTitle && item.episode === item.episodeTitle) {
-      return item.episode;
-    }
-    return [item.episode, item.episodeTitle].filter(Boolean).join(' - ');
+  if (item.episode && item.episodeTitle && item.episode === item.episodeTitle) {
+    return item.episode;
   }
-
-  if (item.platform === 'custom') {
-    return [item.episode, item.siteName].filter(Boolean).join(' - ');
-  }
-
-  return [item.episode, item.channel].filter(Boolean).join(' - ');
+  return [item.episode, item.episodeTitle].filter(Boolean).join(' - ');
 }
 
 function buildNetflixEpisodeStatusText(item: MediaItem): string | null {
@@ -807,8 +823,8 @@ function createListRowBase(
   actions.className = 'channel-item-actions';
   actions.append(
     createButton(isEnabled ? 'Disable' : 'Enable', onToggle),
-    createButton('Edit', onEdit),
-    createButton('Delete', onDelete),
+    createIconButton(ICONS.edit, onEdit, 'secondary'),
+    createIconButton(ICONS.delete, onDelete, 'danger'),
   );
 
   item.append(info, actions);
@@ -1195,7 +1211,13 @@ function createWatchCard(item: MediaItem): HTMLElement {
 
   const badgeRow = document.createElement('div');
   badgeRow.className = 'watch-card-badge-row';
-  badgeRow.append(createBadge(item.platform));
+  if (item.platform === 'youtube') {
+    badgeRow.append(createBadge(item.platform, item.channel!));
+  } else if (item.platform === 'custom') {
+    badgeRow.append(createBadge(item.platform, item.siteName!));
+  } else {
+    badgeRow.append(createBadge(item.platform));
+  }
 
   const title = document.createElement('h2');
   title.className = 'watch-card-title';
@@ -1234,7 +1256,7 @@ function createWatchCard(item: MediaItem): HTMLElement {
 
   const footer = document.createElement('div');
   footer.className = 'watch-card-footer';
-  
+
   const mainAction = createIconButton(
     ICONS.play,
     () => openUrl(item.url),
@@ -1287,10 +1309,13 @@ function createEmptyState(): HTMLElement {
   return emptyState;
 }
 
-function filterItems(items: MediaItem[]): MediaItem[] {
-  const platformFiltered = state.filter === 'all' 
-    ? items 
-    : items.filter((item) => item.platform === state.filter);
+function filterItems(items: MediaItem[], isAll: boolean = false): MediaItem[] {
+  let platformFiltered = items;
+  if (!isAll) {
+    platformFiltered = state.filter === 'all'
+      ? items
+      : items.filter((item) => item.platform === state.filter);
+  }
 
   if (state.view === 'archives') {
     return platformFiltered.filter((item) => item.isArchived);
@@ -1313,7 +1338,7 @@ async function renderPopup(): Promise<void> {
     (left, right) =>
       Date.parse(right.lastWatchedAt) - Date.parse(left.lastWatchedAt),
   );
-  const filteredItems = filterItems(items);
+  const [filteredItems, allFilteredItems] = [filterItems(items), filterItems(items, true)];
 
   popupRoot.replaceChildren();
 
@@ -1323,10 +1348,8 @@ async function renderPopup(): Promise<void> {
   const hero = document.createElement('header');
   hero.className = 'hero-panel';
   hero.innerHTML =
-    '<p class="eyebrow">Local Extension</p><h1>Anime Watch Tracker</h1><p class="hero-copy">Riwayat anime dari Netflix dan YouTube tersimpan lokal di browser.</p>';
+    '<h1 class="hero-title">Anime Watch Tracker</h1>';
 
-  const actions = document.createElement('div');
-  actions.className = 'toolbar';
   const importInput = document.createElement('input');
   importInput.type = 'file';
   importInput.accept = 'application/json,.json';
@@ -1351,15 +1374,36 @@ async function renderPopup(): Promise<void> {
       });
   });
 
-  actions.append(
-    createButton('Import JSON', () => importInput.click()),
-    createButton('Export JSON', () => downloadJsonFile(items)),
-    createButton(
-      'Clear History',
-      () => void clearMediaStorage().then(() => renderPopup()),
-      'primary',
-    ),
-  );
+  function createDataManagementSection(
+    items: MediaItem[],
+    importInput: HTMLInputElement
+  ): HTMLElement {
+    const section = document.createElement('section');
+    section.className = 'channels-panel';
+
+    const header = document.createElement('div');
+    header.className = 'channels-panel-header';
+    const title = document.createElement('h2');
+    title.className = 'channels-panel-title';
+    title.textContent = 'Data Management';
+    header.append(title);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'toolbar';
+    toolbar.style.marginTop = '12px';
+    toolbar.append(
+      createButton('Import JSON', () => importInput.click()),
+      createButton('Export JSON', () => downloadJsonFile(items)),
+      createButton(
+        'Clear History',
+        () => void clearMediaStorage().then(() => renderPopup()),
+        'primary',
+      ),
+    );
+
+    section.append(header, toolbar);
+    return section;
+  }
 
   const filters = document.createElement('div');
   filters.className = 'filter-row';
@@ -1380,7 +1424,7 @@ async function renderPopup(): Promise<void> {
 
   const summary = document.createElement('section');
   summary.className = 'summary-panel';
-  summary.innerHTML = `<p>${filteredItems.length} shown</p><span>${items.length} total item tersimpan</span>`;
+  summary.innerHTML = `<p>${filteredItems.length} shown</p><p>${allFilteredItems.length} Items</p>`;
 
   container.append(hero, tabs);
 
@@ -1407,7 +1451,7 @@ async function renderPopup(): Promise<void> {
 
     container.append(filters, summary, content);
   } else if (state.view === 'settings') {
-    container.append(actions, importInput);
+    container.append(createDataManagementSection(items, importInput), importInput);
     container.append(createYouTubeChannelsSection(youtubeChannels));
     container.append(createAnimeDomainsSection(animeDomains));
   }

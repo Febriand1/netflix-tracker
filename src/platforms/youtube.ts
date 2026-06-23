@@ -7,21 +7,11 @@ import {
   createYouTubeSeriesKey,
   parseYouTubeTitleParts,
 } from '../utils/id';
+import { YOUTUBE_CHANNELS_KEY } from '../constants/storage';
 
 const TITLE_SELECTORS = ['h1.ytd-watch-metadata', 'h1.title'];
 const CHANNEL_SELECTORS = ['ytd-channel-name a', '#channel-name a'];
-const YOUTUBE_CHANNELS_KEY = 'youtubeChannels';
-const DEFAULT_YOUTUBE_CHANNELS: AllowedYouTubeChannel[] = [
-  {
-    id: 'youtube-channel-muse-indonesia',
-    name: 'Muse Indonesia',
-    handle: '@MuseIndonesia',
-    enabled: true,
-    createdAt: new Date('2026-05-17T00:00:00.000Z').toISOString(),
-  },
-];
-
-
+const DEFAULT_YOUTUBE_CHANNELS: AllowedYouTubeChannel[] = [];
 
 export function isYouTubeWatchPage(
   url: URL = new URL(window.location.href),
@@ -106,7 +96,7 @@ function normalizeAllowedYouTubeChannel(
     enabled: candidate.enabled !== false,
     createdAt:
       typeof candidate.createdAt === 'string' &&
-      candidate.createdAt.trim().length > 0
+        candidate.createdAt.trim().length > 0
         ? candidate.createdAt
         : new Date().toISOString(),
   };

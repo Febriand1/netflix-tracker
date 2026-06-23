@@ -27,28 +27,6 @@ export function createYouTubeItemId(videoId: string): string {
   return `youtube-${videoId}`;
 }
 
-export function cleanYouTubeAnimeTitle(title: string): string {
-  return title
-    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
-    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
-    .replace(/\s*[-:|]+\s*$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export function extractYouTubeSeriesTitle(title: string): string {
-  const cleaned = title
-    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
-    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
-    .replace(/\s*-\s*(episode|ep)\.?\s*\d+\b.*$/i, '')
-    .replace(/\s+(episode|ep)\.?\s*\d+\b.*$/i, '')
-    .replace(/\s*-\s*\d+\b.*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return cleaned || title.trim();
-}
-
 export function createYouTubeSeriesKey(title: string): string {
   return `youtube-series-${normalizeTitle(extractYouTubeSeriesTitle(title))}`;
 }
@@ -80,4 +58,26 @@ export function parseYouTubeTitleParts(rawTitle: string): {
     title: titleCandidate || cleanYouTubeAnimeTitle(rawTitle) || rawTitle.trim(),
     episode,
   };
+}
+
+function cleanYouTubeAnimeTitle(title: string): string {
+  return title
+    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
+    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
+    .replace(/\s*[-:|]+\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractYouTubeSeriesTitle(title: string): string {
+  const cleaned = title
+    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
+    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
+    .replace(/\s*-\s*(episode|ep)\.?\s*\d+\b.*$/i, '')
+    .replace(/\s+(episode|ep)\.?\s*\d+\b.*$/i, '')
+    .replace(/\s*-\s*\d+\b.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned || title.trim();
 }

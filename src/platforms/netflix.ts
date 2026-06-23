@@ -1,5 +1,6 @@
 import type { MediaItem } from '../types/media';
 import { cleanText, getStructuredDataEntries } from '../utils/dom';
+import { createNetflixItemId } from '../utils/id';
 
 const DEBUG_PREFIX = '[Anime Watch Tracker]';
 
@@ -40,19 +41,7 @@ const METADATA_SELECTORS = [
 let lastTitleFailureDebugAt = 0;
 let lastLoggedTitleSource = '';
 
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
-function createNetflixItemId(title: string): string {
-  return `netflix-${normalizeTitle(title)}`;
-}
 
 function extractNumericId(value: string | null | undefined): string | null {
   const text = cleanText(value);

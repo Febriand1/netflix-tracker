@@ -57,7 +57,6 @@ button {
     linear-gradient(315deg, rgba(255, 255, 255, 0.03), transparent 25%);
 }
 
-.hero-panel,
 .summary-panel,
 .channels-panel,
 .watch-card,
@@ -71,10 +70,12 @@ button {
 }
 
 .hero-panel {
-  padding: 14px;
+  padding: 8px 4px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.hero-panel::after,
 .summary-panel::after,
 .channels-panel::after,
 .watch-card::after,
@@ -86,38 +87,24 @@ button {
   pointer-events: none;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  color: #ff8f95;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.hero-panel h1,
-.empty-state h2,
-.watch-card-title {
+.hero-title {
   margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-align: center;
+  letter-spacing: -0.5px;
 }
 
-.hero-panel h1 {
-  font-size: 1.45rem;
-  line-height: 1.15;
-}
-
-.hero-copy,
 .watch-card-meta,
 .watch-card-time,
 .empty-state p,
 .summary-panel span {
   margin: 0;
   color: var(--muted);
-}
-
-.hero-copy {
-  margin-top: 10px;
-  line-height: 1.55;
 }
 
 .toolbar,
@@ -412,14 +399,19 @@ button {
 }
 
 .channel-item-actions {
-  display: grid;
-  grid-template-columns: repeat(3, auto);
+  display: flex;
   gap: 8px;
   width: 100%;
 }
 
 .channel-item-actions .button {
   padding: 8px 12px;
+  flex: 1;
+}
+
+.channel-item-actions .icon-button {
+  padding: 8px;
+  flex: 0;
 }
 
 .content {
@@ -572,6 +564,8 @@ button {
   }
 
   .channel-item-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
+    gap: 8px;
+    width: 100%;
   }
 }
