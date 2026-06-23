@@ -22,3 +22,27 @@ export function getFirstText(selectors: string[]): string | null {
 
   return null;
 }
+
+export function getStructuredDataEntries(root: ParentNode = document): Record<string, unknown>[] {
+  const scripts = root.querySelectorAll<HTMLScriptElement>(
+    'script[type="application/ld+json"]',
+  );
+  const allEntries: Record<string, unknown>[] = [];
+
+  for (const script of scripts) {
+    const content = cleanText(script.textContent);
+    if (!content) continue;
+
+    try {
+      const parsed = JSON.parse(content) as
+        | Record<string, unknown>
+        | Array<Record<string, unknown>>;
+      const entries = Array.isArray(parsed) ? parsed : [parsed];
+      allEntries.push(...entries);
+    } catch {
+      continue;
+    }
+  }
+
+  return allEntries;
+}

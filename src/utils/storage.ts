@@ -12,7 +12,15 @@ import type {
   MediaStorage,
   Platform,
 } from '../types/media';
-import { createCustomSeriesKey, createYouTubeSeriesKey } from './id';
+import {
+  createCustomSeriesKey,
+  createNetflixItemId,
+  createYouTubeItemId,
+  createYouTubeSeriesKey,
+  normalizeHostname,
+  normalizeTitle,
+  parseYouTubeTitleParts
+} from './id';
 
 export const defaultMediaStorage: MediaStorage = {
   items: [],
@@ -38,24 +46,6 @@ const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [
     createdAt: new Date('2026-05-17T00:00:00.000Z').toISOString(),
   },
 ];
-
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-function createNetflixItemId(title: string): string {
-  return `netflix-${normalizeTitle(title)}`;
-}
-
-function createYouTubeItemId(videoId: string): string {
-  return `youtube-${videoId}`;
-}
 
 function extractNetflixTitleId(value: string | null | undefined): string | null {
   if (!value) {
@@ -104,15 +94,6 @@ function buildNetflixOpenUrl(title: string, titleId: string | null): string {
   return `https://www.netflix.com/search?q=${encodeURIComponent(title)}`;
 }
 
-function cleanYouTubeAnimeTitle(title: string): string {
-  return title
-    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
-    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
-    .replace(/\s*[-:|]+\s*$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function normalizeChannelName(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
@@ -129,49 +110,11 @@ function createYouTubeChannelId(name: string, handle?: string | null): string {
     : `youtube-channel-${normalizedName}`;
 }
 
-function normalizeCurrentDomain(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^\*\./, '')
-    .replace(/^www\./, '')
-    .replace(/\/.*$/, '')
-    .replace(/\/$/, '');
-}
-
-function normalizeDomainKeyword(value: string): string {
-  return normalizeCurrentDomain(value);
-}
-
 function createAnimeDomainId(name: string, hostname: string): string {
-  return normalizeTitle(name) || normalizeDomainKeyword(hostname);
+  return normalizeTitle(name) || normalizeHostname(hostname);
 }
 
-function parseYouTubeTitleParts(rawTitle: string): {
-  title: string;
-  episode: string | null;
-} {
-  const episodeMatch = rawTitle.match(/\b(?:episode|ep)\.?\s*(\d+)\b/i);
-  const episode = episodeMatch ? `Episode ${episodeMatch[1]}` : null;
 
-  if (!episodeMatch || episodeMatch.index === undefined) {
-    const fallbackTitle = cleanYouTubeAnimeTitle(rawTitle);
-    return {
-      title: fallbackTitle || rawTitle.trim(),
-      episode: null,
-    };
-  }
-
-  const titleCandidate = cleanYouTubeAnimeTitle(
-    rawTitle.slice(0, episodeMatch.index),
-  );
-
-  return {
-    title: titleCandidate || cleanYouTubeAnimeTitle(rawTitle) || rawTitle.trim(),
-    episode,
-  };
-}
 
 function logStorageAvailability(reason: string): void {
   const chromeExists = typeof chrome !== 'undefined';
@@ -249,18 +192,15 @@ function normalizeAllowedYouTubeChannel(
   };
 }
 
-function normalizeAllowedYouTubeChannels(items: unknown[]): AllowedYouTubeChannel[] {
-  const byKey = new Map<string, AllowedYouTubeChannel>();
 
-  for (const item of items) {
-    const normalized = normalizeAllowedYouTubeChannel(item);
-    if (!normalized) {
-      continue;
-    }
+function deduplicateAndSortList<T extends { name: string; enabled: boolean; createdAt: string }>(
+  items: T[],
+  getKey: (item: T) => string
+): T[] {
+  const byKey = new Map<string, T>();
 
-    const key = normalized.handle
-      ? `handle:${normalizeChannelHandle(normalized.handle)}`
-      : `name:${normalizeChannelName(normalized.name)}`;
+  for (const normalized of items) {
+    const key = getKey(normalized);
     const existing = byKey.get(key);
 
     if (!existing) {
@@ -285,6 +225,18 @@ function normalizeAllowedYouTubeChannels(items: unknown[]): AllowedYouTubeChanne
   });
 }
 
+function normalizeAllowedYouTubeChannels(items: unknown[]): AllowedYouTubeChannel[] {
+  const normalizedItems = items
+    .map(normalizeAllowedYouTubeChannel)
+    .filter((item): item is AllowedYouTubeChannel => item !== null);
+
+  return deduplicateAndSortList(normalizedItems, (normalized) =>
+    normalized.handle
+      ? `handle:${normalizeChannelHandle(normalized.handle)}`
+      : `name:${normalizeChannelName(normalized.name)}`
+  );
+}
+
 function normalizeAnimeDomain(value: unknown): AnimeDomain | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -292,7 +244,7 @@ function normalizeAnimeDomain(value: unknown): AnimeDomain | null {
 
   const candidate = value as Partial<AnimeDomain>;
   const name = typeof candidate.name === 'string' ? candidate.name.trim().replace(/\s+/g, ' ') : '';
-  const hostname = typeof candidate.hostname === 'string' ? normalizeDomainKeyword(candidate.hostname) : '';
+  const hostname = typeof candidate.hostname === 'string' ? normalizeHostname(candidate.hostname) : '';
   if (!name || !hostname) {
     return null;
   }
@@ -320,36 +272,13 @@ function normalizeAnimeDomain(value: unknown): AnimeDomain | null {
 }
 
 function normalizeAnimeDomains(items: unknown[]): AnimeDomain[] {
-  const byKey = new Map<string, AnimeDomain>();
+  const normalizedItems = items
+    .map(normalizeAnimeDomain)
+    .filter((item): item is AnimeDomain => item !== null);
 
-  for (const item of items) {
-    const normalized = normalizeAnimeDomain(item);
-    if (!normalized) {
-      continue;
-    }
-
-    const key = normalizeDomainKeyword(normalized.hostname);
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, normalized);
-      continue;
-    }
-
-    byKey.set(key, {
-      ...existing,
-      ...normalized,
-      enabled: normalized.enabled,
-    });
-  }
-
-  return [...byKey.values()].sort((left, right) => {
-    const createdAtDiff = Date.parse(left.createdAt) - Date.parse(right.createdAt);
-    if (!Number.isNaN(createdAtDiff) && createdAtDiff !== 0) {
-      return createdAtDiff;
-    }
-
-    return left.name.localeCompare(right.name);
-  });
+  return deduplicateAndSortList(normalizedItems, (normalized) =>
+    normalizeHostname(normalized.hostname)
+  );
 }
 
 function normalizeMediaItem(value: unknown): MediaItem | null {
@@ -682,7 +611,7 @@ export async function upsertAnimeDomain(
       return false;
     }
 
-    return normalizeDomainKeyword(existingDomain.hostname) !== normalizeDomainKeyword(nextDomain.hostname);
+    return normalizeHostname(existingDomain.hostname) !== normalizeHostname(nextDomain.hostname);
   });
 
   filteredDomains.push(nextDomain);

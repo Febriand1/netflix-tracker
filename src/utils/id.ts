@@ -8,12 +8,32 @@ export function normalizeTitle(title: string): string {
     .replace(/^-|-$/g, '');
 }
 
+export function normalizeHostname(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^\*\./, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '')
+    .replace(/\/$/, '');
+}
+
 export function createNetflixItemId(title: string): string {
   return `netflix-${normalizeTitle(title)}`;
 }
 
 export function createYouTubeItemId(videoId: string): string {
   return `youtube-${videoId}`;
+}
+
+export function cleanYouTubeAnimeTitle(title: string): string {
+  return title
+    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
+    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
+    .replace(/\s*[-:|]+\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function extractYouTubeSeriesTitle(title: string): string {
@@ -35,4 +55,29 @@ export function createYouTubeSeriesKey(title: string): string {
 
 export function createCustomSeriesKey(hostname: string, title: string): string {
   return `anime-domain-${normalizeTitle(hostname)}-${normalizeTitle(title)}`;
+}
+
+export function parseYouTubeTitleParts(rawTitle: string): {
+  title: string;
+  episode: string | null;
+} {
+  const episodeMatch = rawTitle.match(/\b(?:episode|ep)\.?\s*(\d+)\b/i);
+  const episode = episodeMatch ? `Episode ${episodeMatch[1]}` : null;
+
+  if (!episodeMatch || episodeMatch.index === undefined) {
+    const fallbackTitle = cleanYouTubeAnimeTitle(rawTitle);
+    return {
+      title: fallbackTitle || rawTitle.trim(),
+      episode: null,
+    };
+  }
+
+  const titleCandidate = cleanYouTubeAnimeTitle(
+    rawTitle.slice(0, episodeMatch.index),
+  );
+
+  return {
+    title: titleCandidate || cleanYouTubeAnimeTitle(rawTitle) || rawTitle.trim(),
+    episode,
+  };
 }

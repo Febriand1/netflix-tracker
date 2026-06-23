@@ -7,6 +7,7 @@ import {
 } from './platforms/netflix';
 import { extractYouTubeWatchData, isYouTubeWatchPage } from './platforms/youtube';
 import { debounce } from './utils/debounce';
+import { createCustomSeriesKey, createYouTubeSeriesKey } from './utils/id';
 
 const DEBUG_PREFIX = '[Anime Watch Tracker]';
 const STORAGE_KEY = 'items';
@@ -26,32 +27,7 @@ const scopedWindow = window as Window & {
   __animeWatchTrackerInitialized?: boolean;
 };
 
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
-function createYouTubeSeriesKey(title: string): string {
-  const cleaned = title
-    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
-    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
-    .replace(/\s*-\s*(episode|ep)\.?\s*\d+\b.*$/i, '')
-    .replace(/\s+(episode|ep)\.?\s*\d+\b.*$/i, '')
-    .replace(/\s*-\s*\d+\b.*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return `youtube-series-${normalizeTitle(cleaned || title.trim())}`;
-}
-
-function createCustomSeriesKey(hostname: string, title: string): string {
-  return `anime-domain-${normalizeTitle(hostname)}-${normalizeTitle(title)}`;
-}
 
 function isCustomInjectedPage(url: URL = new URL(window.location.href)): boolean {
   return !isNetflixWatchPage(url) && !isYouTubeWatchPage(url);

@@ -1,6 +1,12 @@
 import type { AllowedYouTubeChannel, MediaItem } from '../types/media';
 import { formatDurationFromSeconds } from '../utils/date';
-import { getFirstText, getMetaContent, cleanText } from '../utils/dom';
+import { getFirstText, getMetaContent, cleanText, getStructuredDataEntries } from '../utils/dom';
+import {
+  normalizeTitle,
+  createYouTubeItemId,
+  createYouTubeSeriesKey,
+  parseYouTubeTitleParts,
+} from '../utils/id';
 
 const TITLE_SELECTORS = ['h1.ytd-watch-metadata', 'h1.title'];
 const CHANNEL_SELECTORS = ['ytd-channel-name a', '#channel-name a'];
@@ -15,68 +21,11 @@ const DEFAULT_YOUTUBE_CHANNELS: AllowedYouTubeChannel[] = [
   },
 ];
 
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
-function createYouTubeItemId(videoId: string): string {
-  return `youtube-${videoId}`;
-}
 
-function createYouTubeSeriesKey(title: string): string {
-  const cleaned = title
-    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
-    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
-    .replace(/\s*-\s*(episode|ep)\.?\s*\d+\b.*$/i, '')
-    .replace(/\s+(episode|ep)\.?\s*\d+\b.*$/i, '')
-    .replace(/\s*-\s*\d+\b.*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return `youtube-series-${normalizeTitle(cleaned || title.trim())}`;
-}
-
-function cleanYouTubeAnimeTitle(title: string): string {
-  return title
-    .replace(/\[[^\]]*indonesia[^\]]*\]/gi, '')
-    .replace(/\([^)]*indonesia[^)]*\)/gi, '')
-    .replace(/\s*[-:|]+\s*$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function parseYouTubeTitleParts(rawTitle: string): {
-  title: string;
-  episode: string | null;
-} {
-  const episodeMatch = rawTitle.match(/\b(?:episode|ep)\.?\s*(\d+)\b/i);
-  const episode = episodeMatch ? `Episode ${episodeMatch[1]}` : null;
-
-  if (!episodeMatch || episodeMatch.index === undefined) {
-    const fallbackTitle = cleanYouTubeAnimeTitle(rawTitle);
-    return {
-      title: fallbackTitle || rawTitle.trim(),
-      episode: null,
-    };
-  }
-
-  const titleCandidate = cleanYouTubeAnimeTitle(
-    rawTitle.slice(0, episodeMatch.index),
-  );
-
-  return {
-    title: titleCandidate || cleanYouTubeAnimeTitle(rawTitle) || rawTitle.trim(),
-    episode,
-  };
-}
-
-export function isYouTubeWatchPage(url: URL = new URL(window.location.href)): boolean {
+export function isYouTubeWatchPage(
+  url: URL = new URL(window.location.href),
+): boolean {
   const isSupportedHost =
     url.hostname === 'www.youtube.com' || url.hostname === 'youtube.com';
 
@@ -97,7 +46,9 @@ function matchesAllowedYouTubeChannel(
   allowedChannels: AllowedYouTubeChannel[],
 ): boolean {
   const normalizedChannelName = normalizeChannelName(channelName);
-  const normalizedChannelHandle = channelHandle ? normalizeChannelHandle(channelHandle) : null;
+  const normalizedChannelHandle = channelHandle
+    ? normalizeChannelHandle(channelHandle)
+    : null;
 
   return allowedChannels.some((channel) => {
     if (!channel.enabled) {
@@ -110,8 +61,8 @@ function matchesAllowedYouTubeChannel(
 
     return Boolean(
       normalizedChannelHandle &&
-        channel.handle &&
-        normalizeChannelHandle(channel.handle) === normalizedChannelHandle,
+      channel.handle &&
+      normalizeChannelHandle(channel.handle) === normalizedChannelHandle,
     );
   });
 }
@@ -132,7 +83,10 @@ function normalizeAllowedYouTubeChannel(
   }
 
   const candidate = value as Partial<AllowedYouTubeChannel>;
-  const name = typeof candidate.name === 'string' ? candidate.name.trim().replace(/\s+/g, ' ') : '';
+  const name =
+    typeof candidate.name === 'string'
+      ? candidate.name.trim().replace(/\s+/g, ' ')
+      : '';
   if (!name) {
     return null;
   }
@@ -151,13 +105,16 @@ function normalizeAllowedYouTubeChannel(
     handle,
     enabled: candidate.enabled !== false,
     createdAt:
-      typeof candidate.createdAt === 'string' && candidate.createdAt.trim().length > 0
+      typeof candidate.createdAt === 'string' &&
+      candidate.createdAt.trim().length > 0
         ? candidate.createdAt
         : new Date().toISOString(),
   };
 }
 
-function normalizeAllowedYouTubeChannels(items: unknown[]): AllowedYouTubeChannel[] {
+function normalizeAllowedYouTubeChannels(
+  items: unknown[],
+): AllowedYouTubeChannel[] {
   const byKey = new Map<string, AllowedYouTubeChannel>();
 
   for (const item of items) {
@@ -192,7 +149,9 @@ function getYouTubeChannels(): Promise<AllowedYouTubeChannel[]> {
       const normalizedChannels = normalizeAllowedYouTubeChannels(rawChannels);
 
       if (!Array.isArray(result[YOUTUBE_CHANNELS_KEY])) {
-        storageArea.set({ [YOUTUBE_CHANNELS_KEY]: normalizedChannels }, () => resolve(normalizedChannels));
+        storageArea.set({ [YOUTUBE_CHANNELS_KEY]: normalizedChannels }, () =>
+          resolve(normalizedChannels),
+        );
         return;
       }
 
@@ -201,7 +160,9 @@ function getYouTubeChannels(): Promise<AllowedYouTubeChannel[]> {
   });
 }
 
-function getYouTubeVideoId(url: URL = new URL(window.location.href)): string | null {
+function getYouTubeVideoId(
+  url: URL = new URL(window.location.href),
+): string | null {
   const videoId = cleanText(url.searchParams.get('v'));
   return videoId;
 }
@@ -217,7 +178,9 @@ function extractYouTubeTitle(): string | null {
     return metaTitle;
   }
 
-  const documentTitle = cleanText(document.title)?.replace(/\s*-\s*YouTube\s*$/i, '').trim();
+  const documentTitle = cleanText(document.title)
+    ?.replace(/\s*-\s*YouTube\s*$/i, '')
+    .trim();
   return cleanText(documentTitle);
 }
 
@@ -231,7 +194,9 @@ function extractYouTubeChannel(): string | null {
 }
 
 function extractYouTubeChannelHandle(): string | null {
-  const links = document.querySelectorAll<HTMLAnchorElement>(CHANNEL_SELECTORS.join(','));
+  const links = document.querySelectorAll<HTMLAnchorElement>(
+    CHANNEL_SELECTORS.join(','),
+  );
 
   for (const link of links) {
     const linkText = cleanText(link.textContent);
@@ -258,7 +223,9 @@ function extractYouTubeDuration(): string | null {
   return formatDurationFromSeconds(video.duration);
 }
 
-function normalizeIsoDateString(value: string | null | undefined): string | null {
+function normalizeIsoDateString(
+  value: string | null | undefined,
+): string | null {
   const text = cleanText(value);
   if (!text) {
     return null;
@@ -272,19 +239,23 @@ function normalizeIsoDateString(value: string | null | undefined): string | null
   return null;
 }
 
-function extractPublishedAtFromPlayerResponse(playerResponse: unknown): string | null {
+function extractPublishedAtFromPlayerResponse(
+  playerResponse: unknown,
+): string | null {
   if (!playerResponse || typeof playerResponse !== 'object') {
     return null;
   }
 
-  const microformat = (playerResponse as {
-    microformat?: {
-      playerMicroformatRenderer?: {
-        publishDate?: string;
-        uploadDate?: string;
+  const microformat = (
+    playerResponse as {
+      microformat?: {
+        playerMicroformatRenderer?: {
+          publishDate?: string;
+          uploadDate?: string;
+        };
       };
-    };
-  }).microformat?.playerMicroformatRenderer;
+    }
+  ).microformat?.playerMicroformatRenderer;
 
   return (
     normalizeIsoDateString(microformat?.publishDate) ??
@@ -297,7 +268,9 @@ function extractPublishedAtFromWindowState(): string | null {
     ytInitialPlayerResponse?: unknown;
   };
 
-  return extractPublishedAtFromPlayerResponse(scopedWindow.ytInitialPlayerResponse);
+  return extractPublishedAtFromPlayerResponse(
+    scopedWindow.ytInitialPlayerResponse,
+  );
 }
 
 function extractPublishedAtFromInlineScripts(): string | null {
@@ -333,8 +306,9 @@ function extractYouTubePublishedAt(): string | null {
   const metaCandidates = [
     document.querySelector<HTMLMetaElement>('meta[itemprop="datePublished"]')
       ?.content,
-    document.querySelector<HTMLMetaElement>('meta[property="video:release_date"]')
-      ?.content,
+    document.querySelector<HTMLMetaElement>(
+      'meta[property="video:release_date"]',
+    )?.content,
     document.querySelector<HTMLMetaElement>('meta[name="date"]')?.content,
   ];
 
@@ -350,30 +324,14 @@ function extractYouTubePublishedAt(): string | null {
     return playerResponsePublishedAt;
   }
 
-  const scripts = document.querySelectorAll<HTMLScriptElement>(
-    'script[type="application/ld+json"]',
-  );
+  const entries = getStructuredDataEntries();
 
-  for (const script of scripts) {
-    const content = cleanText(script.textContent);
-    if (!content) {
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(content) as Record<string, unknown> | Array<Record<string, unknown>>;
-      const entries = Array.isArray(parsed) ? parsed : [parsed];
-
-      for (const entry of entries) {
-        const publishedAt = normalizeIsoDateString(
-          typeof entry.datePublished === 'string' ? entry.datePublished : null,
-        );
-        if (publishedAt) {
-          return publishedAt;
-        }
-      }
-    } catch {
-      continue;
+  for (const entry of entries) {
+    const publishedAt = normalizeIsoDateString(
+      typeof entry.datePublished === 'string' ? entry.datePublished : null,
+    );
+    if (publishedAt) {
+      return publishedAt;
     }
   }
 

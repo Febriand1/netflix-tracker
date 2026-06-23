@@ -746,7 +746,14 @@ function buildNetflixEpisodeStatusText(item: MediaItem): string | null {
   return null;
 }
 
-function createYouTubeChannelRow(channel: AllowedYouTubeChannel): HTMLElement {
+function createListRowBase(
+  nameText: string,
+  metaText: string,
+  isEnabled: boolean,
+  onToggle: () => void,
+  onEdit: () => void,
+  onDelete: () => void
+): HTMLElement {
   const item = document.createElement('article');
   item.className = 'channel-item';
 
@@ -755,33 +762,46 @@ function createYouTubeChannelRow(channel: AllowedYouTubeChannel): HTMLElement {
 
   const name = document.createElement('p');
   name.className = 'channel-item-name';
-  name.textContent = channel.name;
+  name.textContent = nameText;
 
   const meta = document.createElement('p');
   meta.className = 'channel-item-meta';
-  meta.textContent = [channel.handle, channel.enabled ? 'Enabled' : 'Disabled']
-    .filter(Boolean)
-    .join(' - ');
+  meta.textContent = metaText;
 
   info.append(name, meta);
 
   const actions = document.createElement('div');
   actions.className = 'channel-item-actions';
   actions.append(
-    createButton(channel.enabled ? 'Disable' : 'Enable', () => {
-      void upsertYouTubeChannel({
-        ...channel,
-        enabled: !channel.enabled,
-      }).then(() => renderPopup());
-    }),
-    createButton('Edit', () => openYouTubeChannelModal(channel)),
-    createButton('Delete', () => {
-      void removeYouTubeChannel(channel.id).then(() => renderPopup());
-    }),
+    createButton(isEnabled ? 'Disable' : 'Enable', onToggle),
+    createButton('Edit', onEdit),
+    createButton('Delete', onDelete),
   );
 
   item.append(info, actions);
   return item;
+}
+
+function createYouTubeChannelRow(channel: AllowedYouTubeChannel): HTMLElement {
+  const metaText = [channel.handle, channel.enabled ? 'Enabled' : 'Disabled']
+    .filter(Boolean)
+    .join(' - ');
+
+  return createListRowBase(
+    channel.name,
+    metaText,
+    channel.enabled,
+    () => {
+      void upsertYouTubeChannel({
+        ...channel,
+        enabled: !channel.enabled,
+      }).then(() => renderPopup());
+    },
+    () => openYouTubeChannelModal(channel),
+    () => {
+      void removeYouTubeChannel(channel.id).then(() => renderPopup());
+    }
+  );
 }
 
 function createYouTubeChannelsSection(
@@ -922,19 +942,7 @@ function createYouTubeChannelModal(
 }
 
 function createAnimeDomainRow(domain: AnimeDomain): HTMLElement {
-  const item = document.createElement('article');
-  item.className = 'channel-item';
-
-  const info = document.createElement('div');
-  info.className = 'channel-item-info';
-
-  const name = document.createElement('p');
-  name.className = 'channel-item-name';
-  name.textContent = domain.name;
-
-  const meta = document.createElement('p');
-  meta.className = 'channel-item-meta';
-  meta.textContent = [
+  const metaText = [
     domain.hostname,
     domain.grantedOrigin
       ? normalizeCurrentDomainInput(domain.grantedOrigin)
@@ -944,25 +952,21 @@ function createAnimeDomainRow(domain: AnimeDomain): HTMLElement {
     .filter(Boolean)
     .join(' - ');
 
-  info.append(name, meta);
-
-  const actions = document.createElement('div');
-  actions.className = 'channel-item-actions';
-  actions.append(
-    createButton(domain.enabled ? 'Disable' : 'Enable', () => {
+  return createListRowBase(
+    domain.name,
+    metaText,
+    domain.enabled,
+    () => {
       void upsertAnimeDomain({
         ...domain,
         enabled: !domain.enabled,
       }).then(() => renderPopup());
-    }),
-    createButton('Edit', () => startAnimeDomainEdit(domain)),
-    createButton('Delete', () => {
+    },
+    () => startAnimeDomainEdit(domain),
+    () => {
       void removeAnimeDomain(domain.id).then(() => renderPopup());
-    }),
+    }
   );
-
-  item.append(info, actions);
-  return item;
 }
 
 function createAnimeDomainsSection(domains: AnimeDomain[]): HTMLElement {
@@ -982,7 +986,7 @@ function createAnimeDomainsSection(domains: AnimeDomain[]): HTMLElement {
   subtitle.className = 'channels-panel-copy';
   subtitle.textContent = isStandaloneDomainsView
     ? 'Tab ini aman untuk grant permission dan save domain anime.'
-    : 'Tambah atau edit domain lewat dialog, lalu lanjutkan grant permission di tab penuh.';
+    : 'Tambah atau edit domain lewat dialog, lalu lanjutkan grant permission.';
 
   titleGroup.append(title, subtitle);
   header.append(

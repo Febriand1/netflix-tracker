@@ -1,19 +1,10 @@
 import type { AnimeDomain, MediaItem } from '../types/media';
 import { cleanText, getMetaContent } from '../utils/dom';
-
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-function createCustomSeriesKey(hostname: string, title: string): string {
-  return `anime-domain-${normalizeTitle(hostname)}-${normalizeTitle(title)}`;
-}
+import {
+  normalizeHostname,
+  normalizeTitle,
+  createCustomSeriesKey,
+} from '../utils/id';
 
 const ANIME_DOMAINS_KEY = 'animeDomains';
 const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [
@@ -26,16 +17,6 @@ const DEFAULT_ANIME_DOMAINS: AnimeDomain[] = [
     createdAt: new Date('2026-05-17T00:00:00.000Z').toISOString(),
   },
 ];
-
-function normalizeHostname(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '')
-    .replace(/\/.*$/, '')
-    .replace(/\/$/, '');
-}
 
 function getStorageArea(): chrome.storage.StorageArea | null {
   if (typeof chrome === 'undefined' || !chrome.storage?.local) {
@@ -51,9 +32,14 @@ function normalizeAnimeDomain(value: unknown): AnimeDomain | null {
   }
 
   const candidate = value as Partial<AnimeDomain>;
-  const name = typeof candidate.name === 'string' ? candidate.name.trim().replace(/\s+/g, ' ') : '';
+  const name =
+    typeof candidate.name === 'string'
+      ? candidate.name.trim().replace(/\s+/g, ' ')
+      : '';
   const hostname =
-    typeof candidate.hostname === 'string' ? normalizeHostname(candidate.hostname) : '';
+    typeof candidate.hostname === 'string'
+      ? normalizeHostname(candidate.hostname)
+      : '';
   if (!name || !hostname) {
     return null;
   }
@@ -66,12 +52,14 @@ function normalizeAnimeDomain(value: unknown): AnimeDomain | null {
     name,
     hostname,
     grantedOrigin:
-      typeof candidate.grantedOrigin === 'string' && candidate.grantedOrigin.trim().length > 0
+      typeof candidate.grantedOrigin === 'string' &&
+      candidate.grantedOrigin.trim().length > 0
         ? candidate.grantedOrigin.trim()
         : null,
     enabled: candidate.enabled !== false,
     createdAt:
-      typeof candidate.createdAt === 'string' && candidate.createdAt.trim().length > 0
+      typeof candidate.createdAt === 'string' &&
+      candidate.createdAt.trim().length > 0
         ? candidate.createdAt
         : new Date().toISOString(),
   };
@@ -99,7 +87,9 @@ function getAnimeDomains(): Promise<AnimeDomain[]> {
 
 function extractTitle(): string | null {
   const selectorCandidates = [
-    cleanText(document.querySelector<HTMLElement>('h1.entry-title')?.textContent),
+    cleanText(
+      document.querySelector<HTMLElement>('h1.entry-title')?.textContent,
+    ),
     cleanText(document.querySelector<HTMLElement>('h1')?.textContent),
     cleanText(document.querySelector<HTMLElement>('.entry-title')?.textContent),
   ];
@@ -111,8 +101,7 @@ function extractTitle(): string | null {
   }
 
   return (
-    getMetaContent('meta[property="og:title"]') ??
-    cleanText(document.title)
+    getMetaContent('meta[property="og:title"]') ?? cleanText(document.title)
   );
 }
 
@@ -129,7 +118,9 @@ function normalizeUrl(value: string): string {
 
 function extractEpisodeCandidateTexts(): string[] {
   const values = [
-    cleanText(document.querySelector<HTMLElement>('h1.entry-title')?.textContent),
+    cleanText(
+      document.querySelector<HTMLElement>('h1.entry-title')?.textContent,
+    ),
     cleanText(document.querySelector<HTMLElement>('h1')?.textContent),
     cleanText(document.querySelector<HTMLElement>('.entry-title')?.textContent),
     cleanText(document.querySelector<HTMLElement>('.infozingle')?.textContent),
@@ -156,7 +147,9 @@ function extractEpisode(): string | null {
       }
 
       const episodeValue = match[1].toUpperCase();
-      return /^\d+$/.test(episodeValue) ? `Episode ${episodeValue}` : `Episode ${episodeValue}`;
+      return /^\d+$/.test(episodeValue)
+        ? `Episode ${episodeValue}`
+        : `Episode ${episodeValue}`;
     }
   }
 
@@ -164,10 +157,13 @@ function extractEpisode(): string | null {
 }
 
 function cleanSeriesTitle(value: string): string {
-  const episodePattern = /\b(?:episode|ep|eps)\.?\s*(\d{1,4}|special|ova|movie)\b/i;
+  const episodePattern =
+    /\b(?:episode|ep|eps)\.?\s*(\d{1,4}|special|ova|movie)\b/i;
   const episodeMatch = value.match(episodePattern);
   const beforeEpisode =
-    episodeMatch?.index !== undefined ? value.slice(0, episodeMatch.index) : value;
+    episodeMatch?.index !== undefined
+      ? value.slice(0, episodeMatch.index)
+      : value;
 
   return beforeEpisode
     .replace(/\bsubtitle\s*indonesia\b/gi, '')
@@ -188,7 +184,9 @@ function extractThumbnail(): string | null {
 }
 
 function extractPublishedAt(): string | null {
-  const metaCandidate = getMetaContent('meta[property="article:published_time"]');
+  const metaCandidate = getMetaContent(
+    'meta[property="article:published_time"]',
+  );
   if (metaCandidate) {
     const timestamp = Date.parse(metaCandidate);
     if (!Number.isNaN(timestamp)) {
@@ -196,7 +194,8 @@ function extractPublishedAt(): string | null {
     }
   }
 
-  const timeCandidate = document.querySelector<HTMLTimeElement>('time[datetime]')?.dateTime;
+  const timeCandidate =
+    document.querySelector<HTMLTimeElement>('time[datetime]')?.dateTime;
   if (timeCandidate) {
     const timestamp = Date.parse(timeCandidate);
     if (!Number.isNaN(timestamp)) {
@@ -210,17 +209,19 @@ function extractPublishedAt(): string | null {
 function extractCanonicalUrl(): string {
   return normalizeUrl(
     document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ??
-    window.location.href
+      window.location.href,
   );
 }
 
 function extractVideoSourceUrl(): string | null {
-  const directVideoSrc = document.querySelector<HTMLVideoElement>('video')?.currentSrc;
+  const directVideoSrc =
+    document.querySelector<HTMLVideoElement>('video')?.currentSrc;
   if (directVideoSrc) {
     return directVideoSrc;
   }
 
-  const videoSourceSrc = document.querySelector<HTMLSourceElement>('video source')?.src;
+  const videoSourceSrc =
+    document.querySelector<HTMLSourceElement>('video source')?.src;
   if (videoSourceSrc) {
     return videoSourceSrc;
   }
@@ -238,13 +239,16 @@ function hasEmbeddedPlayer(): boolean {
     return true;
   }
 
-  const iframeCandidates = document.querySelectorAll<HTMLIFrameElement>('iframe[src]');
+  const iframeCandidates =
+    document.querySelectorAll<HTMLIFrameElement>('iframe[src]');
   for (const iframe of iframeCandidates) {
     const src = iframe.src.toLowerCase();
     if (
       src &&
       !src.startsWith('about:blank') &&
-      !/doubleclick|googlesyndication|googleads|disqus|facebook\.com\/plugins/i.test(src)
+      !/doubleclick|googlesyndication|googleads|disqus|facebook\.com\/plugins/i.test(
+        src,
+      )
     ) {
       return true;
     }
@@ -265,11 +269,16 @@ function isLikelyListingPage(rawTitle: string, canonicalUrl: string): boolean {
     /\b(daftar episode|episode list|list episode|batch|complete|jadwal rilis|daftar anime|home|beranda)\b/i.test(
       normalizedTitle,
     ) ||
-    /\/(daftar-anime|complete-series|jadwal-rilis|genre|batch)\b/i.test(normalizedUrl)
+    /\/(daftar-anime|complete-series|jadwal-rilis|genre|batch)\b/i.test(
+      normalizedUrl,
+    )
   );
 }
 
-function isTrackableEpisodePage(rawTitle: string, canonicalUrl: string): boolean {
+function isTrackableEpisodePage(
+  rawTitle: string,
+  canonicalUrl: string,
+): boolean {
   if (isLikelyListingPage(rawTitle, canonicalUrl)) {
     return false;
   }
@@ -288,9 +297,7 @@ function findMatchingAnimeDomain(
 ): AnimeDomain | null {
   return (
     domains.find(
-      (domain) =>
-        domain.enabled &&
-        currentHostname.includes(domain.hostname),
+      (domain) => domain.enabled && currentHostname.includes(domain.hostname),
     ) ?? null
   );
 }
@@ -315,7 +322,10 @@ export async function extractGenericAnimeWatchData(): Promise<MediaItem | null> 
 
   const domains = await getAnimeDomains();
   const normalizedCurrentHostname = normalizeHostname(currentUrl.hostname);
-  const matchedDomain = findMatchingAnimeDomain(normalizedCurrentHostname, domains);
+  const matchedDomain = findMatchingAnimeDomain(
+    normalizedCurrentHostname,
+    domains,
+  );
   if (!matchedDomain) {
     return null;
   }
@@ -336,7 +346,10 @@ export async function extractGenericAnimeWatchData(): Promise<MediaItem | null> 
   }
 
   const seriesTitle = extractSeriesTitle(title);
-  const seriesKey = createCustomSeriesKey(normalizedCurrentHostname, seriesTitle);
+  const seriesKey = createCustomSeriesKey(
+    normalizedCurrentHostname,
+    seriesTitle,
+  );
   const videoSourceUrl = extractVideoSourceUrl();
 
   return {

@@ -1,5 +1,5 @@
 import type { MediaItem } from '../types/media';
-import { cleanText } from '../utils/dom';
+import { cleanText, getStructuredDataEntries } from '../utils/dom';
 
 const DEBUG_PREFIX = '[Anime Watch Tracker]';
 
@@ -134,35 +134,19 @@ function extractTitleIdFromMeta(): string | null {
 }
 
 function extractTitleIdFromStructuredData(): string | null {
-  const scripts = document.querySelectorAll<HTMLScriptElement>(
-    'script[type="application/ld+json"]',
-  );
+  const entries = getStructuredDataEntries();
 
-  for (const script of scripts) {
-    const content = cleanText(script.textContent);
-    if (!content) {
-      continue;
-    }
+  for (const entry of entries) {
+    const urlCandidate =
+      typeof entry.url === 'string'
+        ? entry.url
+        : typeof (entry.partOfSeries as Record<string, unknown> | undefined)?.url === 'string'
+          ? ((entry.partOfSeries as Record<string, unknown>).url as string)
+          : null;
 
-    try {
-      const parsed = JSON.parse(content) as Record<string, unknown> | Array<Record<string, unknown>>;
-      const entries = Array.isArray(parsed) ? parsed : [parsed];
-
-      for (const entry of entries) {
-        const urlCandidate =
-          typeof entry.url === 'string'
-            ? entry.url
-            : typeof (entry.partOfSeries as Record<string, unknown> | undefined)?.url === 'string'
-              ? ((entry.partOfSeries as Record<string, unknown>).url as string)
-              : null;
-
-        const titleId = extractTitleIdFromNetflixUrl(urlCandidate);
-        if (titleId) {
-          return titleId;
-        }
-      }
-    } catch {
-      continue;
+    const titleId = extractTitleIdFromNetflixUrl(urlCandidate);
+    if (titleId) {
+      return titleId;
     }
   }
 
@@ -887,35 +871,19 @@ function extractNetflixPublishedAt(
     return windowStatePublishedAt;
   }
 
-  const scripts = document.querySelectorAll<HTMLScriptElement>(
-    'script[type="application/ld+json"]',
-  );
+  const entries = getStructuredDataEntries();
 
-  for (const script of scripts) {
-    const content = cleanText(script.textContent);
-    if (!content) {
-      continue;
-    }
+  for (const entry of entries) {
+    const candidates = [
+      typeof entry.datePublished === 'string' ? entry.datePublished : null,
+      typeof entry.releaseDate === 'string' ? entry.releaseDate : null,
+    ];
 
-    try {
-      const parsed = JSON.parse(content) as Record<string, unknown> | Array<Record<string, unknown>>;
-      const entries = Array.isArray(parsed) ? parsed : [parsed];
-
-      for (const entry of entries) {
-        const candidates = [
-          typeof entry.datePublished === 'string' ? entry.datePublished : null,
-          typeof entry.releaseDate === 'string' ? entry.releaseDate : null,
-        ];
-
-        for (const candidate of candidates) {
-          const normalized = normalizeIsoDateString(candidate);
-          if (normalized) {
-            return normalized;
-          }
-        }
+    for (const candidate of candidates) {
+      const normalized = normalizeIsoDateString(candidate);
+      if (normalized) {
+        return normalized;
       }
-    } catch {
-      continue;
     }
   }
 
@@ -1339,45 +1307,31 @@ function extractTitleFromMetaTags(): string | null {
 }
 
 function extractTitleFromStructuredData(): string | null {
-  const scripts = document.querySelectorAll<HTMLScriptElement>(
-    'script[type="application/ld+json"]',
-  );
+  const entries = getStructuredDataEntries();
 
-  for (const script of scripts) {
-    const content = cleanText(script.textContent);
-    if (!content) {
-      continue;
+  for (const entry of entries) {
+    const partOfSeries = entry.partOfSeries as
+      | Record<string, unknown>
+      | undefined;
+    const seriesName = cleanText(
+      typeof partOfSeries?.name === 'string' ? partOfSeries.name : null,
+    );
+    if (
+      seriesName &&
+      !isIgnoredTitleText(seriesName) &&
+      !isEpisodeMetadataText(seriesName)
+    ) {
+      return stripWrappingQuotes(seriesName);
     }
 
-    try {
-      const parsed = JSON.parse(content) as Record<string, unknown> | Array<Record<string, unknown>>;
-      const entries = Array.isArray(parsed) ? parsed : [parsed];
-
-      for (const entry of entries) {
-        const partOfSeries = entry.partOfSeries as Record<string, unknown> | undefined;
-        const seriesName = cleanText(
-          typeof partOfSeries?.name === 'string' ? partOfSeries.name : null,
-        );
-        if (
-          seriesName &&
-          !isIgnoredTitleText(seriesName) &&
-          !isEpisodeMetadataText(seriesName)
-        ) {
-          return stripWrappingQuotes(seriesName);
-        }
-
-        const name = cleanText(typeof entry.name === 'string' ? entry.name : null);
-        if (
-          name &&
-          !/^Watch\b/i.test(name) &&
-          !isIgnoredTitleText(name) &&
-          !isEpisodeMetadataText(name)
-        ) {
-          return stripWrappingQuotes(name.replace(/\s*\|\s*Netflix.*$/i, ''));
-        }
-      }
-    } catch {
-      continue;
+    const name = cleanText(typeof entry.name === 'string' ? entry.name : null);
+    if (
+      name &&
+      !/^Watch\b/i.test(name) &&
+      !isIgnoredTitleText(name) &&
+      !isEpisodeMetadataText(name)
+    ) {
+      return stripWrappingQuotes(name.replace(/\s*\|\s*Netflix.*$/i, ''));
     }
   }
 

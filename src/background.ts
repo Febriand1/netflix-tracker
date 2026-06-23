@@ -1,15 +1,7 @@
 import { getAnimeDomains, migrateStorage } from './utils/storage';
+import { normalizeHostname } from './utils/id';
 
-function normalizeHostname(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^\*\./, '')
-    .replace(/^www\./, '')
-    .replace(/\/.*$/, '')
-    .replace(/\/$/, '');
-}
+
 
 function createWildcardOriginFromExact(origin: string): string | null {
   try {
